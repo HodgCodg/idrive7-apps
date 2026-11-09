@@ -1823,5 +1823,8 @@
   "SOOT": "그을음",
   "LOAD (ADAPTED)": "적재량 (적응)",
   "ASH (ADAPTED)": "재 (적응)",
-  "Reading the engine unit...": "엔진 제어 장치를 읽는 중..."
+  "Reading the engine unit...": "엔진 제어 장치를 읽는 중...",
+  "High Beam Assistant": "하이빔 어시스턴트",
+  "Run checks": "점검 실행",
+  "Button test": "버튼 테스트"
 }

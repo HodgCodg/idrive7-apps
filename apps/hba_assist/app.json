@@ -1,0 +1,42 @@
+{
+  "id": "hba_assist",
+  "title": "High Beam Assistant",
+  "description": "Read-only check of BMW's high beam assistant: stalk button, KAFAS enabling code, calibration, switch-off reasons, fault memory, head unit interfaces",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OAB1",
+  "iconGlyph": "HBA",
+  "signals": {
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": ["sendTasuRequest"],
+      "_broadcasts": ["sendTasuResponse"]
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "High Beam Assistant",
+      "buttons": [
+        ["BTN_RUN", "Run checks"],
+        ["BTN_BUTTON", "Button test"],
+        ["BTN_PAGE", "Next page"],
+        ["BTN_SETTINGS", "Settings"]
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "theme",
+      "label": "Colour theme",
+      "type": "choice",
+      "default": "ice",
+      "options": [["ice", "Ice White"], ["m_red", "M Red"], ["amber", "Night Amber"]]
+    },
+    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full",
+     "options": [["full", "Full screen"], ["standard", "Standard"]]},
+    {"key": "renderer", "label": "Renderer", "type": "choice", "default": "auto",
+     "options": [["auto", "GPU 60 fps (default)"], ["software", "Software"]]}
+  ]
+}

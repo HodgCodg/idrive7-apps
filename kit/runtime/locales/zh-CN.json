@@ -1219,5 +1219,8 @@
   "SOOT": "碳烟",
   "LOAD (ADAPTED)": "负载（自适应）",
   "ASH (ADAPTED)": "灰分（自适应）",
-  "Reading the engine unit...": "正在读取发动机控制单元..."
+  "Reading the engine unit...": "正在读取发动机控制单元...",
+  "High Beam Assistant": "远光灯辅助",
+  "Run checks": "运行检查",
+  "Button test": "开关测试"
 }

@@ -1737,5 +1737,8 @@
   "SOOT": "САЖА",
   "LOAD (ADAPTED)": "ЗАГРУЗКА (АДАПТ.)",
   "ASH (ADAPTED)": "ЗОЛА (АДАПТ.)",
-  "Reading the engine unit...": "Чтение блока двигателя..."
+  "Reading the engine unit...": "Чтение блока двигателя...",
+  "High Beam Assistant": "Ассистент дальнего света",
+  "Run checks": "Запустить проверку",
+  "Button test": "Проверка кнопки"
 }
