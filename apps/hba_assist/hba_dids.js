@@ -8,12 +8,14 @@
  *   BDC_G05  "Body Domain Controller BDC-03 ab SP18", rev 1.000   (SGBD index 0F2680)
  *   BDC_G11  "Body Domain Controller" (BDC2015), rev 12.002       (SGBD index 0F2050)
  *   KAFAS04  "Kamerabasiertes Fahrerassistenzsystem Mid, High", rev 8.000 (0F24F0)
+ *   KOMB_G11 rev 14.001, KOMBSP18 rev 9.001, KOMBSP21 rev 0.002 (instrument cluster; 0x2520 is laid
+ *            out identically in all three)
  *
  * Field order = the order of the SGBD's RES_0x..._D table (byte order of the reply).
  * Pure functions, no I/O: test_hba_assist.js checks them against hand-built replies.
  */
 
-const BDC = 0x40, KAFAS = 0x5D, FLM_L = 0x43, FLM_R = 0x44;
+const BDC = 0x40, KAFAS = 0x5D, FLM_L = 0x43, FLM_R = 0x44, KOMBI = 0x60;
 
 // SGBD index (22 F150, 3 bytes) -> SGBD name. From apps/live_data/builtin/sgbd_index.json.
 const SGBD = {
@@ -21,6 +23,9 @@ const SGBD = {
     0x5D: { '0F1350': 'KAFAS01', '0F1840': 'KAFAS20', '0F2160': 'KAFASG11', '0F24F0': 'KAFAS04',
         '0F2AB0': 'ADCAM_L', '0F2AC0': 'ADCAM_M', '0F3090': 'ADCAM_M' },
     0x43: { '0F2200': 'FLM01_L', '0F26C0': 'FLM02_L', '0F26C8': 'FLM02X_L', '0F26CC': 'FLM2_1_L', '0F2E30': 'FLM03_L' },
+    0x60: { '0F2270': 'KOMB_G11', '0F2280': 'KOMB_G11', '0F2360': 'KOMB_G11', '0F2390': 'KOMB_G11', '0F24C0': 'KOMB_G11',
+        '0F2540': 'KOMB_G11', '0F2710': 'KOMBSP18', '0F2800': 'KOMBSP18', '0F28A0': 'KOMBSP18', '0F2B70': 'KOMBSP21',
+        '0F2B74': 'KOMBSP21', '0F2B78': 'KOMBSP21', '0F2B80': 'KOMBSP21', '0F2B84': 'KOMBSP21', '0F2B90': 'KOMBSP21', '0F2B94': 'KOMBSP21' },
     0x44: { '0F2210': 'FLM01_R', '0F26D0': 'FLM02_R', '0F26D8': 'FLM02X_R', '0F26DC': 'FLM2_1_R', '0F2E40': 'FLM03_R' },
 };
 
@@ -133,6 +138,22 @@ const KAFAS_DIDS = {
 };
 const KAFAS_ORDER = [0xD807, 0xE482, 0xD6BC, 0xD3AD, 0xD341, 0xE474];
 
+/**
+ * KOMBI 0x2520 STATUS_KONTROLLLEUCHTEN: the cluster's indicator lamps as it drives them. 14 x u8, a 5-byte
+ * reserve, then (byte 19) STAT_STANDLICHT_FERNLICHT, (20) fog lights, (21) STAT_FERNLICHT_ASSISTENT
+ * "Fernlichtassistent, Abblendlicht", (22) indicators, a 9-byte reserve. Each byte holds two lamps from
+ * TAB_SCHRIFTZUG_SYMBOLFARBE: low nibble = the first named lamp, high nibble = the second (0x10 = "aus,
+ * gruen"). Colour: 0 off, 1 green, 2 yellow, 3 red, 4 orange, 5 white, 6 blue.
+ * -> { hba, lowBeam, parking, highBeam } as colour numbers (0 = off), or null.
+ */
+const COLOUR = ['off', 'green', 'yellow', 'red', 'orange', 'white', 'blue'];
+function lamps(reply) {
+    const d = data(reply, 0x2520);
+    if (!d || d.length < 22) return null;
+    return { hba: d[21] & 0x0F, lowBeam: d[21] >> 4, parking: d[19] & 0x0F, highBeam: d[19] >> 4 };
+}
+const colour = (n) => (n == null ? '-' : COLOUR[n] || 'colour ' + n);
+
 // DTCs that bear on the high beam assistant (from the SGBDs above). Any other code is shown as hex.
 const DTC_TEXT = {
     0x030340: 'SZL (LIN): internal hardware fault',
@@ -163,6 +184,6 @@ function dtcs(reply) {
 }
 
 module.exports = {
-    BDC, KAFAS, FLM_L, FLM_R, SGBD, hex, hexs, data, nrc, sgbdIndex,
+    BDC, KAFAS, FLM_L, FLM_R, KOMBI, SGBD, lamps, colour, hex, hexs, data, nrc, sgbdIndex,
     BUTTON, buttonDids, KAFAS_DIDS, KAFAS_ORDER, REASONS, FASTA, ENABLE_CODE, DTC_TEXT, dtcs,
 };

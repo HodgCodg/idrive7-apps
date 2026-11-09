@@ -1222,5 +1222,9 @@
   "Reading the engine unit...": "正在读取发动机控制单元...",
   "High Beam Assistant": "远光灯辅助",
   "Run checks": "运行检查",
-  "Button test": "开关测试"
+  "Button test": "开关测试",
+  "Start / stop experiment": "开始 / 停止实验",
+  "Off (nothing is sent)": "关闭（不发送）",
+  "E1: KAFAS demo mode": "E1：KAFAS 演示模式",
+  "E2: BDC demo routine": "E2：BDC 演示程序"
 }

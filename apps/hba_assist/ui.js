@@ -5,7 +5,7 @@
 const D = require('./hba_dids');
 
 const W = 1600, H = 520;
-const PAGES = ['Findings', 'KAFAS', 'Button', 'Interfaces'];
+const PAGES = ['Findings', 'KAFAS', 'Button', 'Interfaces', 'Experiment'];
 const LEVEL = { ok: 'accent', info: 'text', warn: 'warn', crit: 'crit' };
 
 /** text cut into lines that fit w at size */
@@ -93,12 +93,44 @@ function interfaces(cv, G, t, v) {
     lines(cv, t, p.x + 20, p.y + 52, p.w - 40, items, 20, p.y + p.h - 8);
 }
 
+const EXP_TITLE = { kafas: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', bdc: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)' };
+
+function experiment(cv, G, t, v) {
+    const p = G.panel(cv, t, 20, G.TOP + 8, W - 40, G.BOTTOM - G.TOP - 16, 'Live-diagnostic experiment (BMW demo jobs, not the factory switch)');
+    const e = v.exp || {};
+    const id = v.expId;
+    const left = [];
+    if (!id || id === 'off') {
+        left.push(['Off: nothing but reads is sent. Pick E1 or E2 in Settings, Experiment, to run one.', 'dim']);
+        left.push(['E1 switches KAFAS\'s HBA demo mode on, E2 starts the BDC\'s HBA demo routine with the camera\'s limits. Each runs up to 60 s on the stationary car, then is switched off.', 'dim']);
+    } else {
+        left.push([EXP_TITLE[id] || id, 'text']);
+        if (id === 'bdc') left.push(['HEADLIGHTS MAY SWITCH: aim the car at a wall, nobody in front.', 'warn']);
+        if (e.state === 'running') left.push(['RUNNING' + (e.endsAt ? ' - ' + Math.max(0, Math.round((e.endsAt - Date.now()) / 1000)) + ' s left' : '') + (e.extended ? ' (extended session)' : '') + '. Press again to stop.', 'accent']);
+        else if (v.blocker) left.push(['Cannot start: ' + v.blocker, 'warn']);
+        else if (e.armed) left.push(['ARMED - press "Start / stop experiment" again to start', 'accent']);
+        else left.push(['Ready: press "Start / stop experiment" twice', 'text']);
+        if (e.verdict) left.push(['Result: ' + e.verdict.text, LEVEL[e.verdict.level]]);
+    }
+    const o = e.samples;
+    if (o) {
+        left.push(['Cluster HBA indicator: ' + (o.lamps ? D.colour(o.lamps.hba) : 'not readable') + (o.lamps ? '   high beam lamp: ' + D.colour(o.lamps.highBeam) : ''), o.lamps && o.lamps.hba ? 'accent' : 'text']);
+        left.push(['KAFAS: ' + (o.rec || '-') + (o.reasons && o.reasons.length ? ' (held off: ' + o.reasons.join(', ') + ')' : '') + (o.opTime != null ? ' · active time ' + o.opTime + ' s' : ''), 'dim']);
+    }
+    const mid = p.x + Math.round(p.w * 0.52);
+    lines(cv, t, p.x + 20, p.y + 52, mid - p.x - 40, left, 21, p.y + p.h - 8);
+    const ev = (e.events || []).slice(-9).reverse().map((x) => [new Date(x.t).toISOString().slice(11, 19) + '  ' + x.text, LEVEL[x.level] || 'text']);
+    lines(cv, t, mid, p.y + 52, p.x + p.w - mid - 20, ev.length ? ev : [['No events yet.', 'dim']], 18, p.y + p.h - 8);
+}
+
 function draw(cv, G, t, v, page) {
     cv.clear(t.bg);
-    G.frame(cv, t, PAGES, PAGES.indexOf(page), [v.state === 'running' && { text: 'READING' }, v.state === 'button' && { text: 'BUTTON TEST' }]);
+    G.frame(cv, t, PAGES, PAGES.indexOf(page), [v.state === 'running' && { text: 'READING' }, v.state === 'button' && { text: 'BUTTON TEST' },
+        v.exp && v.exp.state === 'running' && { text: 'EXPERIMENT' }]);
     if (page === 'KAFAS') kafas(cv, G, t, v);
     else if (page === 'Button') button(cv, G, t, v);
     else if (page === 'Interfaces') interfaces(cv, G, t, v);
+    else if (page === 'Experiment') experiment(cv, G, t, v);
     else findings(cv, G, t, v);
 }
 

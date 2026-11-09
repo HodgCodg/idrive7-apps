@@ -1826,5 +1826,9 @@
   "Reading the engine unit...": "엔진 제어 장치를 읽는 중...",
   "High Beam Assistant": "하이빔 어시스턴트",
   "Run checks": "점검 실행",
-  "Button test": "버튼 테스트"
+  "Button test": "버튼 테스트",
+  "Start / stop experiment": "실험 시작 / 중지",
+  "Off (nothing is sent)": "끄기 (전송 안 함)",
+  "E1: KAFAS demo mode": "E1: KAFAS 데모 모드",
+  "E2: BDC demo routine": "E2: BDC 데모 루틴"
 }

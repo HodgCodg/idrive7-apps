@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { headUnit } = require('./hu-stub');
-const { fakeSignals, kafas04, bdcG05, flm } = require('./hba_fake_car');
+const { fakeSignals, kafas04, bdcG05, kombi, flm } = require('./hba_fake_car');
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : d; };
@@ -36,13 +36,14 @@ st.stalk = scenario === 'stalk'
 
 let frame = 0;
 const hu = headUnit(stage, {
-    dataDir: out, fresh: true, sets: {},
+    dataDir: out, fresh: true, sets: { experiment: 'kafas' },
     image: async (name, cv) => {
         const f = path.join(out, name.toLowerCase() + '-' + (frame++) + '.png');
         fs.writeFileSync(f, Buffer.isBuffer(cv) ? cv : cv.png());
     },
 });
-const car = fakeSignals({ 0x40: bdcG05(st), 0x5D: kafas04(st), 0x43: flm([0x0F, 0x26, 0xC0]), 0x44: flm([0x0F, 0x26, 0xD0]) });
+st.lampFollows = 'kafas';
+const car = fakeSignals({ 0x40: bdcG05(st), 0x5D: kafas04(st), 0x60: kombi(st), 0x43: flm([0x0F, 0x26, 0xC0]), 0x44: flm([0x0F, 0x26, 0xD0]) });
 hu.ctx.signals = car.signals;
 hu.start();
 
@@ -58,6 +59,8 @@ setTimeout(async () => {
     await wait(3000); await hu.loopFn();
     await t; await hu.loopFn();
     await click('BTN_PAGE'); await click('BTN_PAGE'); await click('BTN_PAGE'); await hu.loopFn();   // Findings after
+    await click('BTN_EXP'); await hu.loopFn();   // Experiment page: armed, then refused (the stub car has no live speed / P)
+    await click('BTN_EXP'); await hu.loopFn();
     const sent = car.sent.map((r) => r[1]);
     console.log('preview_hba: ' + frame + ' frames in ' + out + '; requests sent: ' + sent.length +
         ' (services ' + Array.from(new Set(sent)).map((x) => x.toString(16)).join(', ') + ')');

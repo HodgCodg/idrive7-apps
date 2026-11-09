@@ -8,6 +8,8 @@
  *   await p.buttonTest(15000, fn) poll the stalk's HBA button as the BDC sees it; fn(view) on each change
  *   p.view()                      everything known so far, for the screen
  *   p.findings()                  [{ level: 'ok'|'warn'|'crit'|'info', text, basis }]  basis: measured / inference
+ *   await p.observe()             { t, lamps, rec, reasons, opTime, button }: the cluster's HBA indicator and KAFAS's
+ *                                 view right now (experiments.js reads it before / during / after a run)
  *   p.save()                      writes <dataDir>/reports/hba-<time>.json (raw replies included)
  */
 const fs = require('fs');
@@ -15,7 +17,7 @@ const path = require('path');
 const D = require('./hba_dids');
 const catalog = require('./catalog');
 
-const UNITS = [[D.BDC, 'BDC'], [D.KAFAS, 'KAFAS'], [D.FLM_L, 'FLM left'], [D.FLM_R, 'FLM right']];
+const UNITS = [[D.BDC, 'BDC'], [D.KAFAS, 'KAFAS'], [D.FLM_L, 'FLM left'], [D.FLM_R, 'FLM right'], [D.KOMBI, 'KOMBI']];
 const DTC_MASK = 0xFF;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,6 +53,10 @@ class Probe {
                 this.units[addr] = { name, answered: !!r, index, sgbd: (D.SGBD[addr] || {})[index] || '', nrc: D.nrc(r), raw: D.hexs(r) };
             }
             await this.readKafas();
+            if (this.present(D.KOMBI)) {
+                const r = await this.link.read(D.KOMBI, 0x2520);
+                this.cluster = { answered: !!r, lamps: D.lamps(r), nrc: D.nrc(r), raw: D.hexs(r) };
+            }
             const bdc = this.units[D.BDC] || {};
             this.button.dids = D.buttonDids(bdc.sgbd);
             if (this.present(D.BDC)) {
@@ -139,6 +145,21 @@ class Probe {
 
     cancel() { this.cancelled = true; }
 
+    /** one look at what shows whether HBA is on: cluster indicator, KAFAS recommendation / reasons / counter, button */
+    async observe() {
+        const o = { t: this.now() };
+        if (this.present(D.KOMBI)) o.lamps = D.lamps(await this.link.read(D.KOMBI, 0x2520, 1000));
+        if (this.present(D.KAFAS)) {
+            const rec = D.KAFAS_DIDS[0xD3AD].decode(await this.link.read(D.KAFAS, 0xD3AD, 1000));
+            const why = D.KAFAS_DIDS[0xD341].decode(await this.link.read(D.KAFAS, 0xD341, 1000));
+            const fa = D.KAFAS_DIDS[0xE474].decode(await this.link.read(D.KAFAS, 0xE474, 1000));
+            o.rec = rec ? rec.text : null;
+            o.reasons = why ? why.active : null;
+            o.opTime = fa ? fa.opTime : null;
+        }
+        return o;
+    }
+
     /** is KAFAS's "time HBA activated by the driver" counter rising between two runs? */
     opTimeTrend() {
         const h = this.opHistory;
@@ -154,6 +175,12 @@ class Probe {
         if (bdc) add(bdc.answered ? 'info' : 'crit', bdc.answered ? 'BDC: SGBD index ' + (bdc.index || '?') + (bdc.sgbd ? ' = ' + bdc.sgbd : ' (unknown variant)') : 'BDC did not answer');
         if (kaf) add(kaf.answered ? 'info' : 'crit', kaf.answered ? 'KAFAS: SGBD index ' + (kaf.index || '?') + (kaf.sgbd ? ' = ' + kaf.sgbd : ' (not KAFAS04: identifiers below may not apply)') : 'KAFAS did not answer');
         if (this.extraD580 && this.extraD580.value) add('info', 'BDC also answers D580 (HBA button, BDC2015 identifier): ' + this.extraD580.raw);
+        const kom = this.units[D.KOMBI];
+        if (kom && !kom.answered) add('warn', 'KOMBI (cluster) did not answer: the HBA indicator cannot be read');
+        if (this.cluster) {
+            if (this.cluster.lamps) add(this.cluster.lamps.hba ? 'ok' : 'info', 'Cluster HBA indicator: ' + D.colour(this.cluster.lamps.hba) + ' (low beam lamp ' + D.colour(this.cluster.lamps.lowBeam) + ', high beam ' + D.colour(this.cluster.lamps.highBeam) + ')');
+            else add('warn', 'Cluster indicator status (2520) not readable: ' + (this.cluster.raw || 'no answer'));
+        }
         const k = (did) => this.kafas[did] && this.kafas[did].value;
         const ec = k(0xE482);
         if (ec) {
@@ -205,7 +232,7 @@ class Probe {
     }
 
     view() {
-        return { state: this.state, started: this.started, units: this.units, kafas: this.kafas, faults: this.faults,
+        return { state: this.state, started: this.started, units: this.units, kafas: this.kafas, faults: this.faults, cluster: this.cluster || null,
             catalog: this.catalog, button: Object.assign({}, this.button), trend: this.opTimeTrend(), findings: this.findings(),
             stats: Object.assign({}, this.link.stats),
             link: { ready: !!this.link.ready, available: !!this.link.available, error: this.link.error || null } };

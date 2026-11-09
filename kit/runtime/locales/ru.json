@@ -1740,5 +1740,9 @@
   "Reading the engine unit...": "Чтение блока двигателя...",
   "High Beam Assistant": "Ассистент дальнего света",
   "Run checks": "Запустить проверку",
-  "Button test": "Проверка кнопки"
+  "Button test": "Проверка кнопки",
+  "Start / stop experiment": "Начать / остановить эксперимент",
+  "Off (nothing is sent)": "Выкл. (ничего не отправляется)",
+  "E1: KAFAS demo mode": "E1: демо-режим KAFAS",
+  "E2: BDC demo routine": "E2: демо-процедура BDC"
 }

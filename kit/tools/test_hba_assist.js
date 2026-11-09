@@ -30,10 +30,10 @@ const lines = [];
 const log = { info: (m) => lines.push(m), warn: (m) => lines.push('W ' + m), error: (m) => lines.push('E ' + m) };
 
 // ---- a fake car behind the real kit/diag.js (frames as the head unit's TASU delivers them) -----------
-const { fakeSignals, kafas04, bdcG05, flm, pos, u32 } = require('./hba_fake_car');
-function car(units) {
+const { fakeSignals, kafas04, bdcG05, kombi, flm, pos, u32 } = require('./hba_fake_car');
+function car(units, allow) {
     const f = fakeSignals(units);
-    const link = new HbaLink(f.signals, log, { timeoutMs: 150, dtcTimeoutMs: 300, gapMs: 1 });
+    const link = new HbaLink(f.signals, log, { timeoutMs: 150, dtcTimeoutMs: 300, gapMs: 1, allow });
     return { link, sent: f.sent, ready: link.init().then(() => link) };
 }
 
@@ -85,7 +85,7 @@ function car(units) {
     assert.strictEqual(p.units[0x5D].sgbd, 'KAFAS04');
     assert.strictEqual(p.units[0x43].sgbd, 'FLM02_L');
     assert.ok(c.sent.every((r) => r[1] === 0x22 || (r[1] === 0x19 && r[2] === 0x02)), 'probe sent something but 22 / 19 02');
-    assert.ok(c.sent.every((r) => [0x40, 0x5D, 0x43, 0x44].indexOf(r[0]) >= 0));
+    assert.ok(c.sent.every((r) => [0x40, 0x5D, 0x43, 0x44, 0x60].indexOf(r[0]) >= 0));
     let f = p.findings().map((x) => x.level + ' ' + x.text);
     assert.ok(f.some((x) => /^crit KAFAS HBA enabling code: EC_Off$/.test(x)), f.join('\n'));
     assert.ok(p.findings().some((x) => x.basis === 'inference' && /not expected to run HBA/.test(x.text)), 'consequence not marked as inference');
@@ -132,7 +132,7 @@ function car(units) {
     assert.ok(Date.now() - t0 < 3000, 'run took ' + (Date.now() - t0) + ' ms');
     assert.ok(p.findings().some((x) => x.level === 'crit' && x.text === 'KAFAS did not answer'));
     assert.ok(!c.sent.some((r) => r[0] === 0x5D && !(r[1] === 0x22 && r[2] === 0xF1 && r[3] === 0x50)), 'a silent KAFAS was asked more than F150');
-    assert.strictEqual(c.link.stats.missed, 3, 'KAFAS + both FLM F150 reads');
+    assert.strictEqual(c.link.stats.missed, 4, 'KAFAS + both FLM + KOMBI F150 reads');
 
     // 8. Catalog scan: names in English and German, types and enum items, getter id 0 is no getter.
     const s = catalog.scan(JSON.stringify({ interfaces: {
@@ -160,6 +160,121 @@ function car(units) {
     assert.ok(texts.some((x) => /KAFAS did not answer/.test(x)), 'Findings page lacks the finding');
     assert.ok(texts.some((x) => /^Press "Run checks"/.test(x)), 'fresh page lacks the start hint');
     assert.ok(texts.some((x) => /^field  de\.bmw\.infotainment\.lighting\.ExteriorLightSettings  settingHighBeamAssistant  \[get, set, notify\]$/.test(x)), 'Interfaces page lacks the catalog match');
+
+    // 10. Experiments: the exact-frame list, gates, sessions, refusals, revert in every way out, verdict.
+    const X = require(path.join(src, 'experiments'));
+    const ok = [[0x5D, 0x2E, [0xD3, 0xA6, 1]], [0x5D, 0x2E, [0xD3, 0xA6, 0]], [0x40, 0x31, [1, 0xA5, 0x39, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+        [0x40, 0x31, [2, 0xA5, 0x39]], [0x40, 0x31, [3, 0xA5, 0x39]], [0x40, 0x10, [3]], [0x5D, 0x10, [1]], [0x5D, 0x3E, [0]]];
+    ok.forEach((r) => assert.ok(X.allowed(r[0], r[1], r[2]), 'not allowed: ' + JSON.stringify(r)));
+    const no = [[0x5D, 0x2E, [0xD3, 0xA6, 2]], [0x40, 0x2E, [0xD3, 0xA6, 1]], [0x60, 0x2E, [0xD3, 0xA6, 1]],
+        [0x40, 0x31, [1, 0xA5, 0x39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],          // SCHALTER_KAMERA 00: the app's own limits
+        [0x40, 0x31, [1, 0xA5, 0x39, 1, 0x32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],       // a distance
+        [0x40, 0x31, [1, 0xA5, 0x39, 1, 0, 0xFF, 0x6A, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],    // a zone angle
+        [0x40, 0x31, [1, 0xA5, 0x39, 1]], [0x5D, 0x31, [2, 0xA5, 0x39]], [0x40, 0x10, [2]], [0x60, 0x10, [3]], [0x43, 0x10, [3]],
+        [0x40, 0x3E, [0x80]], [0x40, 0x27, [1]], [0x40, 0x2F, [0xE3, 0xB8, 3, 1]], [0x40, 0x2E, [0xD5, 0x42, 5]], [0x40, 0x14, [0xFF, 0xFF, 0xFF]],
+        [0x5D, 0x2E, [0xD3, 0xA6, 1, 0]], [0xDF, 0x2E, [0xD3, 0xA6, 1]]];
+    no.forEach((r) => assert.ok(!X.allowed(r[0], r[1], r[2]), 'allowed: ' + JSON.stringify(r)));
+    let xs = { ec: 0, opTime: 0, stalk: () => ({ zero: 1, fla: 0, hb: 0, flash: 0 }), lampFollows: 'kafas' };
+    c = car({ 0x40: bdcG05(xs), 0x5D: kafas04(xs), 0x60: kombi(xs) }, X.allowed);
+    await c.ready;
+    for (const r of no) await assert.rejects(c.link.request(r[0], r[1], r[2]));
+    assert.strictEqual(c.sent.length, 0, 'a frame off the list reached the transport');
+
+    const later2 = (ms) => new Promise((r) => setTimeout(r, ms));
+    let il = { ok: true, why: '' };
+    const exps = (link, pr) => new X.Experiments(link, pr, { log, dataDir: src, interlock: () => il, durationMs: 500, observeMs: 60, armMs: 400 });
+    const writes = (sent) => sent.filter((r) => r[1] !== 0x22 && r[1] !== 0x19).map((r) => D.hexs(r));
+
+    // gates: no checks yet -> nothing; one press only arms; interlock off -> nothing; wrong variant -> nothing
+    p = new Probe(c.link, { log, dataDir: src, catalogFile: cat });
+    let x = exps(c.link, p);
+    await x.press('kafas'); await x.press('kafas');
+    assert.ok(x.events.some((e) => /not started: run the checks first/.test(e.text)));
+    await p.run();
+    assert.strictEqual(p.units[0x60].sgbd, 'KOMBSP18');
+    assert.ok(p.findings().some((f) => f.text === 'Cluster HBA indicator: off (low beam lamp green, high beam off)'), p.findings().map((f) => f.text).join('\n'));
+    x = exps(c.link, p);
+    await x.press('kafas');
+    assert.strictEqual(x.view().armed, true);
+    await later2(450); await x.press('kafas');                              // too late: arms again, sends nothing
+    il = { ok: false, why: 'selector not in P (D)' };
+    await x.press('kafas');
+    assert.ok(x.events.some((e) => /not started: selector not in P/.test(e.text)));
+    assert.deepStrictEqual(writes(c.sent), [], 'a gate let a write through');
+    il = { ok: true, why: '' };
+
+    // E1 accepted: indicator comes on, KAFAS switched off at the end, journal gone
+    await x.press('kafas'); await x.press('kafas');
+    assert.deepStrictEqual(writes(c.sent), ['5D 2E D3 A6 01', '5D 2E D3 A6 00']);
+    assert.strictEqual(xs.kafasDemo, false, 'KAFAS left in demo mode');
+    assert.ok(/CAME ON \(green\)/.test(x.verdict.text), x.verdict.text);
+    assert.ok(!fs.existsSync(path.join(src, 'experiment-journal.json')));
+    assert.ok(fs.readdirSync(path.join(src, 'reports')).some((f) => /^experiment-kafas-/.test(f)));
+
+    // E1 needing the extended session: 10 03, retry, 3E 00 while it runs, off, 10 01
+    c.sent.length = 0; xs.kafasWrite = 'session';
+    await x.press('kafas'); await x.press('kafas');
+    const w = writes(c.sent);
+    assert.deepStrictEqual(w.slice(0, 3), ['5D 2E D3 A6 01', '5D 10 03', '5D 2E D3 A6 01']);
+    assert.ok(w.filter((r) => r === '5D 3E 00').length >= 2, w.join(' | '));
+    assert.deepStrictEqual(w.slice(-2), ['5D 2E D3 A6 00', '5D 10 01']);
+    assert.strictEqual(xs.ext[0x5D], false); assert.strictEqual(xs.kafasDemo, false);
+
+    // security access asked for: refused, never 27, still switched back
+    c.sent.length = 0; xs.kafasWrite = 'nrc33';
+    await x.press('kafas'); await x.press('kafas');
+    assert.ok(x.events.some((e) => /refused: NRC 33 security access required \(not attempted\)/.test(e.text)));
+    assert.ok(!c.sent.some((r) => r[1] === 0x27));
+    assert.ok(writes(c.sent).indexOf('5D 2E D3 A6 00') >= 0);
+    xs.kafasWrite = 'ok';
+
+    // E2 whose stop routine is missing: 10 01 fallback, "ignition cycle" said; lamp from the BDC demo
+    c.sent.length = 0; xs.lampFollows = 'bdc'; xs.bdcStop = 'nrc12';
+    await x.press('bdc'); await x.press('bdc');
+    const w2 = writes(c.sent);
+    assert.strictEqual(w2[0], '40 31 01 A5 39 01' + ' 00'.repeat(13));   // SCHALTER_KAMERA 01, DISTANZ 00, 6 x 2 zone bytes
+    assert.ok(w2.indexOf('40 31 03 A5 39') >= 0 && w2.indexOf('40 31 02 A5 39') >= 0 && w2[w2.length - 1] === '40 10 01', w2.join(' | '));
+    assert.ok(x.events.some((e) => /refused: NRC 12 .*ignition cycle is the final revert/.test(e.text)));
+    assert.ok(/CAME ON/.test(x.verdict.text));
+    xs.bdcStop = 'ok'; xs.bdcDemo = false;
+
+    // a stop press ends it early; the interlock going away ends it too
+    c.sent.length = 0;
+    const longX = new X.Experiments(c.link, p, { log, dataDir: src, interlock: () => il, durationMs: 60000, observeMs: 50, armMs: 400 });
+    await longX.press('kafas'); const run = longX.press('kafas');
+    await later2(300); await longX.press('kafas'); await run;
+    assert.strictEqual(longX.state, 'done'); assert.strictEqual(xs.kafasDemo, false);
+    const run2 = (longX.press('kafas'), longX.press('kafas'));
+    await later2(300); il = { ok: false, why: 'the car is moving' }; await run2;
+    assert.ok(longX.events.some((e) => /interlock lost \(the car is moving\)/.test(e.text))); assert.strictEqual(xs.kafasDemo, false);
+    il = { ok: true, why: '' };
+
+    // the wrong BDC: these bytes are for BDC_G05 only
+    p.units[0x40].sgbd = 'BDC_G11';
+    c.sent.length = 0; await x.press('bdc'); await x.press('bdc');
+    assert.deepStrictEqual(writes(c.sent), []);
+    assert.ok(x.events.some((e) => /these bytes are from BDC_G05; this car has BDC_G11/.test(e.text)));
+    p.units[0x40].sgbd = 'BDC_G05';
+
+    // the app stopped during a run: the next start switches it off first
+    xs.kafasDemo = true;
+    fs.writeFileSync(path.join(src, 'experiment-journal.json'), JSON.stringify({ id: 'kafas', t: 1 }));
+    c.sent.length = 0;
+    assert.strictEqual(await exps(c.link, p).recover(), true);
+    assert.deepStrictEqual(writes(c.sent), ['5D 2E D3 A6 00']); assert.strictEqual(xs.kafasDemo, false);
+    assert.strictEqual(await exps(c.link, p).recover(), false, 'recovered twice');
+
+    // the Experiment page draws in every state
+    const UI2 = require(path.join(src, 'ui'));
+    const { Recorder } = require(path.join(src, 'kit/record'));
+    const G2 = require(path.join(src, 'kit/gauges')), t2 = require(path.join(src, 'kit/themes')).theme('ice');
+    const seen = [];
+    [['off', ''], ['kafas', ''], ['bdc', 'run the checks first']].forEach((s2) => {
+        const cv = new Recorder(UI2.W, UI2.H), text = cv.text.bind(cv);
+        cv.own = true; cv.text = function (str) { seen.push(String(str)); return text.apply(null, arguments); };
+        UI2.draw(cv, G2, t2, Object.assign(p.view(), { exp: x.view(), expId: s2[0], blocker: s2[1] }), 'Experiment');
+    });
+    assert.ok(seen.some((q) => /^HEADLIGHTS MAY SWITCH/.test(q)) && seen.some((q) => /^Off: nothing but reads is sent/.test(q)) && seen.some((q) => /^Cannot start: run the checks first/.test(q)));
 
     console.log('test_hba_assist: all checks passed (' + lines.length + ' log lines)');
 })().catch((e) => { console.error(e); console.error(lines.slice(-30).join('\n')); process.exit(1); });

@@ -6,9 +6,12 @@
  *   22 <DID> [<DID> ...]   ReadDataByIdentifier, 1-8 identifiers, physical request
  *   19 02 <mask>           ReadDTCInformation by status mask, physical request
  *
- * to the BDC (0x40), KAFAS (0x5D) or a headlight module (0x43 / 0x44) only. Anything else - sessions,
+ * to the BDC (0x40), KAFAS (0x5D), a headlight module (0x43 / 0x44) or the cluster (0x60) only. Anything else - sessions,
  * writes (2E), I/O control (2F), routines (31), clearing faults (14), security access (27), functional
  * requests - throws before it reaches the transport. The Diag is kept out of reach of the rest of the app.
+ *
+ * opts.allow(target, sid, data) -> true lets one more request through: experiments.js passes its list of
+ * exact frames (the only writes the app can send, each named there), nothing else.
  *
  * One request at a time, gapMs between two, each with its own timeout. Every request and its reply
  * (or "no answer") is logged in hex, with the time it took.
@@ -16,7 +19,7 @@
 const { Diag, replyTo } = require('./kit/diag');
 const { hex, hexs } = require('./hba_dids');
 
-const TARGETS = Object.freeze([0x40, 0x5D, 0x43, 0x44]);
+const TARGETS = Object.freeze([0x40, 0x5D, 0x43, 0x44, 0x60]);
 const MAX_DIDS = 8;
 const PRIVATE = new WeakMap();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +52,7 @@ class HbaLink {
         this.timeoutMs = (opts && opts.timeoutMs) || 2000;
         this.dtcTimeoutMs = (opts && opts.dtcTimeoutMs) || 6000;   // a full fault memory can take seconds
         this.verbose = !(opts && opts.verbose === false);
+        this.allow = (opts && opts.allow) || null;
         this.chain = Promise.resolve();
         this.stats = { sent: 0, replies: 0, missed: 0, refused: 0, blocked: 0 };
         this.trace = [];              // last 200 exchanges, for the saved report
@@ -64,10 +68,15 @@ class HbaLink {
     request(target, sid, data, timeoutMs) {
         const d = Array.isArray(data) ? data.slice() : data;   // checked = sent
         try { check(target, sid, d); } catch (e) {
+            if (this.allow && Array.isArray(d) && d.every(isByte) && this.allow(target, sid, d)) return this._queue(target, sid, d, timeoutMs);
             this.stats.blocked++;
             this.log.error('blocked: ' + e.message);
             return Promise.reject(e);
         }
+        return this._queue(target, sid, d, timeoutMs);
+    }
+
+    _queue(target, sid, d, timeoutMs) {
         const run = async () => {
             const t0 = Date.now();
             this.stats.sent++;

@@ -5,24 +5,29 @@ not come on. It also shows which way of switching it from the head unit, if any,
 Built for a 2021 G30 LCI 530e (BDC-03, KAFAS4, FLM2, S552, S5AC); it identifies other cars' units
 and reports what it finds there too.
 
-**Status: read-only probe (0.1.0). It has no Enable / Disable control.** BMW's descriptions of these
-control units contain no request that switches the high beam assistant the way the stalk does (see
-*Evidence*). A control that sent one of the demo or lamp jobs instead would bypass KAFAS's glare
-logic. Enable / Disable gets built once the probe finds a path that keeps BMW's logic in charge:
-see *Phase 2*.
+**Status (0.2.0): read-only probe, plus BMW's own HBA demo jobs as guarded live-diagnostic
+experiments. It has no Enable / Disable control yet.** BMW's descriptions of these control units
+contain no request that switches the high beam assistant the way the stalk does (see *Evidence*). The
+two diagnostic jobs that name it are demo / presentation modes. The app runs them as **experiments**
+on the stationary car, measures what they do to the **cluster's own HBA indicator**, and switches
+them back off. Enable / Disable gets built only on a path that is shown to light the indicator
+*and* leave KAFAS's normal glare-dependent switching in charge: see *Phase 2*.
 
 ## What it does
 
 Through the head unit's own diagnostic link (InternalTasu, as `kit/runtime/diag.js`), restricted
 by `hba_link.js` to **`22` (read data) and `19 02` (read fault memory)**, to the BDC `0x40`,
-KAFAS `0x5D` and headlights `0x43`/`0x44`. Anything else throws before it reaches the transport
-(`kit/tools/test_hba_assist.js` checks 16 kinds of forbidden request). Opening the app sends nothing.
+KAFAS `0x5D`, headlights `0x43`/`0x44` and cluster `0x60`. The only other frames are the experiments'
+exact ones (*Experiments* below). Anything else throws before it reaches the transport
+(`kit/tools/test_hba_assist.js` checks 16 kinds of forbidden read and 20 near-miss experiment frames).
+Opening the app sends nothing, except switching off an experiment the app was stopped in the middle of.
 
 | Page | Shows | Source (BMW SGBD) |
 |---|---|---|
 | Findings | conclusions, colour-coded, inferences marked "(inferred)" | all of the below |
 | KAFAS | variant `D807`, **HBA enabling code `E482`**, calibration `D6BC`, beam recommendation `D3AD`, **switch-off reasons `D341`**, **HBA usage counters `E474`** | KAFAS04 rev 8.000 |
 | Button | the stalk's HBA button **as the BDC reads it**, live, during a 20 s test, with high-beam push / flash pull as a control | BDC_G05 `E3B8` (BDC_G11 / BDC: `D580`, `D583`) |
+| Findings / Experiment | **the cluster's HBA indicator** as KOMBI drives it: `0x2520 STATUS_KONTROLLLEUCHTEN`, byte 21 low nibble `STAT_FERNLICHT_ASSISTENT` (0 off, 1 green, …), byte 21 high nibble low beam, byte 19 high nibble high beam | KOMB_G11 14.001 / KOMBSP18 9.001 / KOMBSP21 0.002 (identical layout) |
 | Interfaces | every HBA-related interface, field, method, type or enum in the head unit's SOME/IP catalog (`/etc/oap/someip/someip-interfaces.json`), marked writable where it has a setter / is a method | the unit's own catalog |
 
 Also read: `22 F150` (SGBD index → which BDC / KAFAS / FLM variant), fault memory of BDC and KAFAS
@@ -33,6 +38,43 @@ Each run and each button test is saved with **every raw request and reply** to
 `data/reports/hba-<time>.json`, and every exchange is in the app log (`UDS 5D 22 E4 82 -> 62 E4 82 00 (38 ms)`).
 Requests time out after 2 s (fault memory 6 s). A unit that does not answer `22 F150` gets no further
 requests.
+
+## Experiments (live diagnostics)
+
+Settings, **Experiment** (ships **Off**: then nothing but reads is ever sent, and the button is
+hidden). Each is a job from BMW's own SGBD, sent as fixed bytes:
+
+| | Sends | Switches back | Unit must be |
+|---|---|---|---|
+| **E1** KAFAS HBA demo mode | `5D 2E D3 A6 01` (`DEMO_MODE_FLA`) | `5D 2E D3 A6 00` | KAFAS04 |
+| **E2** BDC HBA demo routine, camera limits | `40 31 01 A5 39 01` + 13 × `00` (`LICHT_FLA_DEMO_MODUS`, `SCHALTER_KAMERA` = 1: the glare-free limits come from KAFAS's camera; distance and zone angles fixed 0, never set by the app) | `40 31 02 A5 39` (stop routine), `40 31 03 A5 39` read first (results) | BDC_G05 |
+
+Safeguards (all in `experiments.js`, all tested):
+- the unit must have answered `22 F150` as the SGBD the bytes come from; otherwise the experiment is
+  refused ("these bytes are from BDC_G05; this car has …")
+- **stationary in P on live data**: speed 0, selector P; the kit's demo drive never counts. The
+  interlock is checked again every 2 s and a lost interlock ends the run
+- the start button is pressed **twice within 4 s**; a blocked experiment only says why
+- one run lasts at most **60 s**, and any press stops it
+- switched back at stop, timeout, lost interlock, any refusal, and **at the next app start** if the
+  app was stopped mid-run (`data/experiment-journal.json`)
+- `NRC 7E/7F`: one retry in the extended session (`10 03`), kept alive with `3E 00`, `10 01` at the
+  end. `NRC 33` (security access): stops; **`27` is never sent**. A missing stop routine (`NRC 12`):
+  `10 01`, and the screen says an ignition cycle is the final revert
+- E1 has **no read-back** in KAFAS04 (`D3A6` is write-only) and may persist: check the car after an
+  ignition cycle (test procedure)
+- E2 **may switch the headlights**: aim at a wall, nobody in front
+
+Verdict: from the cluster's indicator (`2520`), read before, every 2 s during, and after:
+"CAME ON (green)", "stayed off", "already on", or "could not be read". KAFAS's recommendation,
+switch-off reasons and active-time counter are recorded alongside. Each run is saved with every frame
+to `data/reports/experiment-<id>-<time>.json`.
+
+**What a result would mean.** If the indicator comes on, that is the first hard evidence of a head-unit
+path. It is still a demo mode, though, so before any Enable button it must also be shown that KAFAS
+keeps switching normally: high beam off for oncoming traffic, on in the dark. That needs a supervised
+night test, not a parked one. If the indicator stays off in both experiments, the evidence points
+back at the enabling code or the button (the probe's findings).
 
 ## Evidence (why there is no Enable button yet)
 
@@ -57,8 +99,10 @@ procedure step 0).
 4. **FACT.** The only HBA *write* jobs are demo modes. BDC_G05 `31 A539 LICHT_FLA_DEMO_MODUS`
    ("for presentations and diagnosis") takes explicit glare-free zone angles or the camera's limits.
    KAFAS04 `2E D3A6 DEMO_MODE_FLA` switches a showroom demo mode. BDC `2E D542 LEUCHTEN_FUNKTION`
-   switches the high-beam lamp directly. All three bypass the normal activation logic or KAFAS's
-   glare detection, so the app does not use them.
+   switches the high-beam lamp directly. **INFERENCE:** the demo modes bypass at least the normal
+   activation logic, and the lamp job also bypasses KAFAS's glare detection. So none of them is an
+   Enable button. The two demo jobs run only as reversible, measured *Experiments*. The lamp job is
+   never sent, and E2 is sent only with the camera's limits (`SCHALTER_KAMERA` = 1).
 5. **FACT** (DTC texts). The HBA signal chain is: the BDC reads the stalk (LIN from the SZL) and
    sends `0x1EE` "operation of steering column button" to KAFAS. The BDC also sends `0x36A`
    "status high-beam assistant" to KOMBI (the indicator) and KAFAS, plus a SOME/IP event
@@ -79,6 +123,8 @@ procedure step 0).
 |---|---|---|
 | `E482` ≠ Operational, or `800A21` / `800A01` stored | KAFAS has HBA switched off / not enabled | No button emulation can help. Fix the enabling (BMW dealer / proper FA + coding of KAFAS); this app doesn't touch FSCs or coding |
 | Button test: stalk pushes / flash counted, **0 HBA presses although each was held ~1 s**; or SZL fault `030342` / `030343` | the button or its contact in the SZL is faulty | replace the stalk / SZL; the app re-tests it |
+| **Experiment E1 or E2: cluster indicator CAME ON** | a diagnostic job reaches the HBA function from the head unit | supervised night test of that experiment: does KAFAS still dip for oncoming traffic? Only then an Enable / Disable built on it |
+| Experiments: indicator stayed off in both | the demo jobs don't touch the activation state | the enabling code / button rows decide |
 | Button test: HBA presses counted, `E482` Operational, `E474` active time stays 0 | the button reaches the BDC but HBA never engages | check the conditions on the KAFAS page (`D341`: daylight, speed, town); light switch in **AUTO**; try the lever gesture (below) |
 | Interfaces page lists a **writable** HBA field / method | the HMI has an HBA switch | Phase 2: Enable / Disable via that interface, confirmed by `E474` active time rising and the indicator. Built and verified on the car only then |
 | none of the above | no clean head-unit path on this firmware | BLOCKED, with the saved reports as evidence |
@@ -110,11 +156,17 @@ in the car is changed by any step.
    cluster's HBA indicator is the check**: note whether it lights. Wait 60 s, then **Run checks**
    again. A rising HBA active-time counter (`E474`) confirms it. An unchanged counter proves
    nothing: KAFAS may store it only at the end of a drive cycle.
-5. Collect the evidence from your PC:
+5. **Experiments** (stationary, P, parking brake, aimed at a wall, nobody in front of the car):
+   Settings, Experiment, *E1*. Run checks, then press *Start / stop experiment* twice. Watch the
+   cluster for 60 s; the Experiment page shows the indicator as KOMBI reports it, every 2 s.
+   Then the same with *E2* (the headlights may switch). Set Experiment back to *Off*. Switch the
+   ignition off and on, then Run checks once more: everything should read as before step 5. If it
+   doesn't, a demo mode persisted, so say so.
+6. Collect the evidence from your PC:
    `HU=root@<unit-ip> KEY=~/.ssh/id_mgu kit/tools/hba-mgu-probe.sh`. This copies and scans the
    unit's SOME/IP catalog, lists HMI resources that name the high beam assistant, and pulls the
    app's reports and log into `hba-probe-<time>/`. It is read-only.
-6. Send the folder (or the Findings page) back. Each row of the Phase 2 table maps to a next step.
+7. Send the folder (or the Findings page) back. Each row of the Phase 2 table maps to a next step.
 
 ## Install
 
