@@ -1,4 +1,4 @@
-[English](README.md) | [中文](README.zh-CN.md) | **Русский (полный перевод)**
+[English](README.idrive7-apps.md) | [中文](README.zh-CN.md) | **Русский (полный перевод)**
 
 <h1 align="center">Пользовательские приложения MGU</h1>
 
@@ -237,7 +237,7 @@ node kit/tools/preview.js dist/redline preview wait=10   # английский 
 
 Каждый пакет содержит все **33 таблицы локалей HMI**, во всех таблицах заполнены все 256 слотов `SID_CN_DYNAMIC`. Существующие китайские ресурсы и поведение credit не меняются; небольшой кириллический атлас добавляется только с `ru`. Русский перевод охватывает интерфейс всех приложений и имеющиеся полные описания Fault Scanner; неизвестные описания остаются английскими. Китайский перевод базы включён в сборку `zh-CN`. `kit/tools/import_diagnostic_ru.py` импортирует более полный русский каталог из ваших EN/RU-баз `DiagDocDb`, не изменяя исходный английский `dtc_db.pack`.
 
-Китайский перевод: 小白151 ([JackieZ123430](https://github.com/JackieZ123430), [idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)); руководства: [English](README.md), [中文](README.zh-CN.md).
+Китайский перевод: 小白151 ([JackieZ123430](https://github.com/JackieZ123430), [idrive7-apps-cn](https://github.com/JackieZ123430/idrive7-apps-cn)); руководства: [English](README.idrive7-apps.md), [中文](README.zh-CN.md).
 
 Файлы `.mgu` содержат SDK BMW — используйте их только для своего автомобиля и не публикуйте.
 

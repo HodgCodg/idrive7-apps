@@ -170,8 +170,9 @@ in the car is changed by any step.
 
 ## Install
 
-From a fork of `idrive7-apps` that has this folder at `apps/hba_assist/` (the Store's repo-tree
-source builds every `apps/*` folder; `mgu-repo.json` needs no change):
+From `https://github.com/HodgCodg/idrive7-apps` (default branch `hba-assist`), or any fork of
+`idrive7-apps` with this folder at `apps/hba_assist/` (the Store's repo-tree source builds every
+`apps/*` folder; `mgu-repo.json` needs no change):
 
 - **MGU Store:** add / refresh the repo as a source, install *High Beam Assistant*. The head unit
   builds it with its own SDK (Node 8.16; the app is checked against Node 8.16.2's parser).

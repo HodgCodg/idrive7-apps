@@ -84,7 +84,7 @@ python kit/tools/make_kit.py --language ko
 
 Doom은 첫 빌드에 Freedoom 게임
 데이터를 다운로드하므로 인터넷 연결이 필요합니다. 차량 설치·제거 방법과 요구되는
-MGU 접근 환경은 원본 [README](README.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
+MGU 접근 환경은 원본 [README](README.idrive7-apps.md)와 [배포 안내](deploy/car/README.txt)를 따릅니다.
 이 수정본은 실차에서 검증 되었습니다.
 
 배포 체크

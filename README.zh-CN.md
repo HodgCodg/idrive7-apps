@@ -1,4 +1,4 @@
-[English](README.md) | **简体中文（完整译文）**
+[English](README.idrive7-apps.md) | **简体中文（完整译文）**
 
 <h1 align="center">MGU 自定义应用</h1>
 
@@ -6,7 +6,7 @@
 
 <p align="center"><b>Translation by：抖音 小白科技杂物社 · BiliBili 小白151 · GitHub <a href="https://github.com/JackieZ123430">JackieZ123430</a></b></p>
 
-> 本文完整翻译自同一提交中的 [英文 README](README.md)，保留原文的章节、示例、参数和媒体。原作者及第三方版权归各自权利人所有；中文翻译署名不替代原项目版权。另见 [翻译署名与来源](NOTICE.zh-CN.md)。
+> 本文完整翻译自同一提交中的 [英文 README](README.idrive7-apps.md)，保留原文的章节、示例、参数和媒体。原作者及第三方版权归各自权利人所有；中文翻译署名不替代原项目版权。另见 [翻译署名与来源](NOTICE.zh-CN.md)。
 
 <p align="center">
   <img alt="60 fps" src="https://img.shields.io/badge/frame%20rate-60%20fps-2ea44f?style=for-the-badge">
