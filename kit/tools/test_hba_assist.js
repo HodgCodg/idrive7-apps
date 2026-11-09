@@ -87,7 +87,8 @@ function car(units) {
     assert.ok(c.sent.every((r) => r[1] === 0x22 || (r[1] === 0x19 && r[2] === 0x02)), 'probe sent something but 22 / 19 02');
     assert.ok(c.sent.every((r) => [0x40, 0x5D, 0x43, 0x44].indexOf(r[0]) >= 0));
     let f = p.findings().map((x) => x.level + ' ' + x.text);
-    assert.ok(f.some((x) => /^crit KAFAS HBA enabling code: EC_Off/.test(x)), f.join('\n'));
+    assert.ok(f.some((x) => /^crit KAFAS HBA enabling code: EC_Off$/.test(x)), f.join('\n'));
+    assert.ok(p.findings().some((x) => x.basis === 'inference' && /not expected to run HBA/.test(x.text)), 'consequence not marked as inference');
     assert.ok(f.some((x) => /^crit KAFAS fault 800A21: KAFAS: FLA_FSC_Missing/.test(x)), f.join('\n'));
     assert.ok(f.some((x) => /^warn KAFAS: HBA has been active 0 s/.test(x)), f.join('\n'));
     assert.ok(f.some((x) => /^info KAFAS holds high beam off because: speed below threshold, ambient brightness/.test(x)));
@@ -106,7 +107,7 @@ function car(units) {
     st.stalk = () => { n++; return { zero: 0, fla: 0, hb: n % 4 < 2 ? 1 : 0, flash: 0 }; };
     await p.buttonTest(800);
     assert.strictEqual(p.button.presses, 0);
-    assert.ok(p.findings().some((x) => x.level === 'crit' && /never the HBA button/.test(x.text)), p.findings().map((x) => x.text).join('\n'));
+    assert.ok(p.findings().some((x) => x.level === 'crit' && x.basis === 'inference' && /never the HBA button\. If it was held/.test(x.text)), p.findings().map((x) => x.text).join('\n'));
 
     // 6. Second run with the active-time counter higher: "ROSE"; EC_Operational -> ok.
     st.ec = 0; st.opTime = 0; st.kafasDtc = [];
@@ -115,6 +116,11 @@ function car(units) {
     f = p.findings();
     assert.ok(f.some((x) => x.level === 'ok' && /enabling code: EC_Operational/.test(x.text)));
     assert.ok(f.some((x) => x.basis === 'inference' && /counter ROSE \(0 -> 42 s/.test(x.text)));
+    await p.run();
+    assert.ok(p.findings().some((x) => x.level === 'info' && /counter unchanged \(42 s.*not conclusive/.test(x.text)), 'an unchanged counter read as "HBA not active"');
+    st.ec = 4; await p.run();
+    assert.ok(p.findings().some((x) => x.level === 'warn' && /EC_NA \(meaning for HBA unclear\)/.test(x.text)));
+    st.ec = 0;
     assert.ok(f.some((x) => x.level === 'warn' && /catalog not readable/.test(x.text)));
 
     // 7. Silent KAFAS: every read times out, the run still ends, and says so.

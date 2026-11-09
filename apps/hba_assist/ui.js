@@ -37,7 +37,7 @@ function lines(cv, t, x, y, w, items, size, bottom) {
 function status(v) {
     if (!v.link.ready) return 'Diagnostic link (InternalTasu) not available' + (v.link.error ? ': ' + v.link.error : ' yet') + ' - nothing can be read';
     if (v.state === 'running') return 'Reading the car...';
-    if (v.state === 'button') return 'Button test running: press the HBA button on the stalk now';
+    if (v.state === 'button') return 'Button test running: press and hold the HBA button ~1 s, 3 times';
     if (!v.started) return 'Press "Run checks" (car parked, ignition on, nothing is changed in the car)';
     return 'Checked ' + v.started.replace('T', ' ').slice(0, 19) + ' UTC  ·  ' + v.stats.replies + ' replies, ' + v.stats.missed + ' unanswered, ' + v.stats.refused + ' refused';
 }
@@ -71,7 +71,7 @@ function button(cv, G, t, v) {
     const now = b.fla === 1 ? 'PRESSED' : b.fla === 0 ? 'released' : '-';
     cv.text(now, p.x + 40, p.y + 140, 72, b.fla === 1 ? t.accent : t.dim, { font: 'bold' });
     const items = [
-        [v.state === 'button' ? 'Test running: press the HBA button several times, then push the stalk forward and pull it once.' : 'Press "Button test" (20 s). Then press the HBA button a few times, push the stalk forward and pull it once.', v.state === 'button' ? 'accent' : 'dim'],
+        [v.state === 'button' ? 'Test running: press and HOLD the HBA button ~1 s, 3 times. Then push the stalk forward and pull it once.' : 'Press "Button test" (20 s). Then press and hold the HBA button ~1 s, 3 times, push the stalk forward and pull it once.', v.state === 'button' ? 'accent' : 'dim'],
         ['HBA button presses seen: ' + b.presses + '   ·   high beam pushes: ' + b.highBeam + '   ·   flash pulls: ' + b.flash, 'text'],
         ['Read from ' + (b.dids.length ? b.dids.map((d) => D.hex(d, 4)).join(' / ') : '-') + ': ' + b.answered + ' of ' + b.samples + ' reads answered', 'dim'],
     ];

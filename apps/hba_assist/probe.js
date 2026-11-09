@@ -53,7 +53,13 @@ class Probe {
             await this.readKafas();
             const bdc = this.units[D.BDC] || {};
             this.button.dids = D.buttonDids(bdc.sgbd);
-            if (this.present(D.BDC)) await this.readButtonOnce();
+            if (this.present(D.BDC)) {
+                await this.readButtonOnce();
+                if (this.button.dids.indexOf(0xD580) < 0) {       // BDC_G05's SGBD (a test-bench revision) has no D580: does this car's?
+                    const r = await this.link.read(D.BDC, 0xD580, 800);
+                    this.extraD580 = { answered: !!r, value: D.BUTTON[0xD580](r), nrc: D.nrc(r), raw: D.hexs(r) };
+                }
+            }
             for (const addr of [D.BDC, D.KAFAS]) {
                 if (this.cancelled) return;
                 if (!this.present(addr)) continue;
@@ -120,7 +126,7 @@ class Probe {
                     this.log.info('stalk: HBA button=' + v.fla + ' high beam=' + v.highBeam + ' flash=' + v.flash);
                     if (onChange) onChange(this.view());
                 }
-                await sleep(150);
+                await sleep(40);       // the read itself takes a round trip; hold the button ~1 s so a press can't fall between two reads
             }
         } finally {
             this.state = 'done';
@@ -147,11 +153,16 @@ class Probe {
         const bdc = this.units[D.BDC], kaf = this.units[D.KAFAS];
         if (bdc) add(bdc.answered ? 'info' : 'crit', bdc.answered ? 'BDC: SGBD index ' + (bdc.index || '?') + (bdc.sgbd ? ' = ' + bdc.sgbd : ' (unknown variant)') : 'BDC did not answer');
         if (kaf) add(kaf.answered ? 'info' : 'crit', kaf.answered ? 'KAFAS: SGBD index ' + (kaf.index || '?') + (kaf.sgbd ? ' = ' + kaf.sgbd : ' (not KAFAS04: identifiers below may not apply)') : 'KAFAS did not answer');
+        if (this.extraD580 && this.extraD580.value) add('info', 'BDC also answers D580 (HBA button, BDC2015 identifier): ' + this.extraD580.raw);
         const k = (did) => this.kafas[did] && this.kafas[did].value;
         const ec = k(0xE482);
         if (ec) {
             if (ec.raw === 0 || ec.raw === 5) add('ok', 'KAFAS HBA enabling code: ' + ec.text);
-            else add('crit', 'KAFAS HBA enabling code: ' + ec.text + ' - KAFAS will not run HBA in this state, whatever the button does');
+            else if (ec.raw === 4 || ec.raw === 0xFF) add('warn', 'KAFAS HBA enabling code: ' + ec.text + ' (meaning for HBA unclear)');
+            else {
+                add('crit', 'KAFAS HBA enabling code: ' + ec.text);
+                add('crit', 'KAFAS is then not expected to run HBA, whatever the button does', 'inference');
+            }
         } else if (this.kafas[0xE482]) add('warn', 'KAFAS HBA enabling code not readable (' + (this.kafas[0xE482].raw || 'no answer') + ')');
         const cal = k(0xD6BC);
         if (cal) add(cal.raw === 1 ? 'ok' : 'crit', 'KAFAS camera calibration: ' + cal.text);
@@ -160,7 +171,10 @@ class Probe {
             add(fasta.opTime > 0 ? 'info' : 'warn', 'KAFAS: HBA has been active ' + fasta.opTime + ' s in total (driver-activated); button overrides counted: ' + (fasta.overrideButton || 0));
         }
         const tr = this.opTimeTrend();
-        if (tr) add(tr.rising ? 'ok' : 'info', 'HBA active-time counter ' + (tr.rising ? 'ROSE' : 'did not rise') + ' (' + tr.from + ' -> ' + tr.to + ' s over ' + tr.seconds + ' s): HBA ' + (tr.rising ? 'is' : 'was not') + ' active between the two runs', 'inference');
+        if (tr) {
+            if (tr.rising) add('ok', 'HBA active-time counter ROSE (' + tr.from + ' -> ' + tr.to + ' s over ' + tr.seconds + ' s): HBA was active between the two runs', 'inference');
+            else add('info', 'HBA active-time counter unchanged (' + tr.to + ' s, ' + tr.seconds + ' s apart) - not conclusive: KAFAS may store it only at the end of a drive cycle. The cluster indicator is the check', 'inference');
+        }
         const why = k(0xD341);
         if (why && why.active.length) add('info', 'KAFAS holds high beam off because: ' + why.active.join(', '));
         if (why && why.failsafe) add('crit', 'KAFAS camera is in fail-safe mode');
@@ -175,7 +189,7 @@ class Probe {
         if (b.ran) {
             if (!b.answered) add('warn', 'Button test: the BDC answered none of the button reads (' + b.dids.map((x) => D.hex(x, 4)).join('/') + ')');
             else if (b.presses) add('ok', 'Button test: the BDC saw the HBA button pressed ' + b.presses + ' time(s) - the button and its LIN link work');
-            else if (b.highBeam || b.flash) add('crit', 'Button test: the BDC saw the stalk move (high beam ' + b.highBeam + ', flash ' + b.flash + ') but never the HBA button - the button (or its contact in the SZL) is faulty');
+            else if (b.highBeam || b.flash) add('crit', 'Button test: the BDC saw the stalk move (high beam ' + b.highBeam + ', flash ' + b.flash + ') but never the HBA button. If it was held ~1 s each time, the button (or its contact in the SZL) is faulty', 'inference');
             else add('warn', 'Button test: nothing pressed was seen. Press the HBA button and push / pull the stalk during the test');
         }
         if (this.catalog) {

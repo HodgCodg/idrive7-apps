@@ -39,10 +39,16 @@ requests.
 Labels: **FACT** = read from BMW's SGBD or DTC text; **INFERENCE** = drawn from facts, not yet
 observed on this car.
 
+Revisions read: BDC_G05 **rev 1.000, "Teststand for 8.46.10"** (a test-bench build, not
+necessarily your car's production SGBD), BDC_G11 rev 12.002, BDC (R62) rev 22.094, KAFAS04 rev
+8.000. Items 3 and 4 below rest on BDC_G05 rev 1.000 until the production file is checked (test
+procedure step 0).
+
 1. **FACT.** Your earlier DIDs don't mean "HBA state". `0xD580` is `LENKSTOCK_BLINKER_TASTER_FLA`,
    the stalk button's raw input (read-only, BDC2015 / BDC_G11). `0xD57E` is `LWR_MODUS`, the
    headlight levelling mode, on every BDC variant. On BDC-03 (BDC_G05, "ab SP18") `D580` does not
-   exist; the button is byte 6 of `0xE3B8 LENKSTOCK_BLINKER`, also read-only.
+   exist; the button is byte 6 of `0xE3B8 LENKSTOCK_BLINKER`, also read-only. (The app still reads
+   `D580` once on a BDC-03 and reports it if the car's firmware answers.)
 2. **FACT.** The BDC's per-profile HBA memory `0xD555 STAT_PIA_FLA_EIN` is marked "no longer used from
    SP2018" in BDC_G05.
 3. **FACT.** BDC_G05 lets diagnostics *simulate* many buttons and inputs (SARAH button `DC84`, door
@@ -72,7 +78,7 @@ observed on this car.
 | Probe result | Meaning | Next step |
 |---|---|---|
 | `E482` ≠ Operational, or `800A21` / `800A01` stored | KAFAS has HBA switched off / not enabled | No button emulation can help. Fix the enabling (BMW dealer / proper FA + coding of KAFAS); this app doesn't touch FSCs or coding |
-| Button test: stalk pushes / flash counted, **0 HBA presses**; or SZL fault `030342` / `030343` | the button or its contact in the SZL is faulty | replace the stalk / SZL; the app re-tests it |
+| Button test: stalk pushes / flash counted, **0 HBA presses although each was held ~1 s**; or SZL fault `030342` / `030343` | the button or its contact in the SZL is faulty | replace the stalk / SZL; the app re-tests it |
 | Button test: HBA presses counted, `E482` Operational, `E474` active time stays 0 | the button reaches the BDC but HBA never engages | check the conditions on the KAFAS page (`D341`: daylight, speed, town); light switch in **AUTO**; try the lever gesture (below) |
 | Interfaces page lists a **writable** HBA field / method | the HMI has an HBA switch | Phase 2: Enable / Disable via that interface, confirmed by `E474` active time rising and the indicator. Built and verified on the car only then |
 | none of the above | no clean head-unit path on this firmware | BLOCKED, with the saved reports as evidence |
@@ -88,15 +94,22 @@ engages.
 Vehicle **stationary, parking brake on, P**, ignition on (a battery charger is a good idea). Nothing
 in the car is changed by any step.
 
+0. **On the laptop (no car needed).** Open your ISTA / EDIABAS `Ecu\BDC_G05.prg` (the production
+   file, newer than the rev 1.000 read here) in Tool32, or with the `ediabasx` CLI (`jobs`, `tables`).
+   Search the jobs and the `SG_FUNKTIONEN` table for `FLA`, `FERNLICHT`, `LENKSTOCK` and `SZL` rows
+   whose SERVICE has `2E`, `2F` or `31`. A *simulation* entry for the stalk's HBA button there would
+   be a new candidate, so send it back before anything is written. Do the same for `KAFAS04.prg`.
 1. Open *High Beam Assistant*. Note that the Findings page says "Press Run checks" (nothing sent yet).
 2. **Run checks.** About 15 s. Findings shows BDC / KAFAS variants, enabling code, calibration,
    counters and faults.
-3. **Button test** (20 s): press the HBA button 3 times, then push the stalk forward once and
-   pull it once. The control inputs (push / pull) prove the BDC is answering, so "0 HBA presses"
-   then means the button.
-4. Light switch to **AUTO**, low beam on. Press the HBA button (or use the lever gesture). Wait
-   60 s. **Run checks** again: the Findings page reports whether the HBA active-time counter rose
-   between the two runs, and whether the cluster indicator came on.
+3. **Button test** (20 s): press and **hold** the HBA button ~1 s, 3 times, then push the stalk
+   forward once and pull it once. The control inputs (push / pull) prove the BDC is answering. The
+   app reads the button many times a second, but a quick tap can still fall between two reads, so
+   "0 HBA presses" only means a faulty button if each press was held.
+4. Light switch to **AUTO**, low beam on. Press the HBA button (or use the lever gesture). **The
+   cluster's HBA indicator is the check**: note whether it lights. Wait 60 s, then **Run checks**
+   again. A rising HBA active-time counter (`E474`) confirms it. An unchanged counter proves
+   nothing: KAFAS may store it only at the end of a drive cycle.
 5. Collect the evidence from your PC:
    `HU=root@<unit-ip> KEY=~/.ssh/id_mgu kit/tools/hba-mgu-probe.sh`. This copies and scans the
    unit's SOME/IP catalog, lists HMI resources that name the high beam assistant, and pulls the
