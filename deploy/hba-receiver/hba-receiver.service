@@ -1,0 +1,13 @@
+[Unit]
+Description=High Beam Assistant report receiver (Tailscale only)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=aiserver
+ExecStart=/usr/bin/python3 /home/aiserver/idrive7-hba/deploy/hba-receiver/hba_receiver.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

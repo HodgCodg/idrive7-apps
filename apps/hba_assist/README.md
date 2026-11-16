@@ -36,6 +36,8 @@ FLA_FSC_Missing`, `800A01 FLA_Misconfiguration`, calibration `800AC4`/`800AC8`).
 
 Each run and each button test is saved with **every raw request and reply** to
 `data/reports/hba-<time>.json`, and every exchange is in the app log (`UDS 5D 22 E4 82 -> 62 E4 82 00 (38 ms)`).
+**Upload (0.3.0):** each saved report is also sent over Tailscale to the owner's server (`uploader.js`, `http://100.73.22.59:8771/hba/upload`, received by `deploy/hba-receiver/`). A report that can't be sent stays in `data/reports/` and is retried every 60 s and after each new report; a sent one moves to `data/reports/sent/`. Setting *Upload reports (Tailscale)*, on by default.
+
 Requests time out after 2 s (fault memory 6 s). A unit that does not answer `22 F150` gets no further
 requests.
 

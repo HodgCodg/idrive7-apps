@@ -10,7 +10,7 @@
  * on its 60 s timeout and at the next app start if the app stopped during one.
  *
  * Opening the app sends nothing but the switch-off of an unfinished experiment. Every run is saved with its
- * raw requests / replies in <data>/reports/.
+ * raw requests / replies in <data>/reports/ and uploaded to the owner's server over Tailscale (uploader.js).
  */
 const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
@@ -20,6 +20,7 @@ const { HbaLink } = require('./hba_link');
 const { Probe } = require('./probe');
 const { Experiments, allowed } = require('./experiments');
 const UI = require('./ui');
+const { Uploader } = require('./uploader');
 
 const BUTTON_TEST_MS = 20000;
 
@@ -39,6 +40,8 @@ mgu.run({
             return { ok: true, why: '' };
         };
         const exp = new Experiments(link, probe, { log, dataDir: ctx.dataDir, interlock });
+        // every saved report goes to the owner's server over Tailscale (queued and retried while offline)
+        const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false });
         let page = UI.PAGES[0];
         let loop = null;
 
@@ -55,14 +58,14 @@ mgu.run({
 
         ui.onClick('BTN_RUN', () => {
             if (!link.ready) { log.warn('diagnostic link not ready: ' + (link.error || 'starting')); return repaint(); }
-            const p = probe.run().then(() => probe.save()).then(repaint).catch((e) => log.error('run: ' + e));
+            const p = probe.run().then(() => probe.save()).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('run: ' + e));
             repaint();
             return p;
         });
         ui.onClick('BTN_BUTTON', () => {
             if (!link.ready) return repaint();
             page = 'Button';
-            const p = probe.buttonTest(BUTTON_TEST_MS, repaint).then(() => probe.save()).then(repaint).catch((e) => log.error('button: ' + e));
+            const p = probe.buttonTest(BUTTON_TEST_MS, repaint).then(() => probe.save()).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('button: ' + e));
             repaint();
             return p;
         });
@@ -70,14 +73,15 @@ mgu.run({
             const id = settings.get('experiment');
             if (id === 'off' || !link.ready) return repaint();
             page = 'Experiment';
-            const p = exp.press(id).then(repaint).catch((e) => log.error('experiment: ' + e));
+            const p = exp.press(id).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('experiment: ' + e));
             repaint();
             return p;
         });
         ui.onClick('BTN_PAGE', () => { page = UI.PAGES[(UI.PAGES.indexOf(page) + 1) % UI.PAGES.length]; return render(); });
         if (ctx.onTab) ctx.onTab((i) => { if (UI.PAGES[i]) page = UI.PAGES[i]; return render(); });
-        settings.onChange((key) => { if (key === 'experiment') { showExpButton(); return render(); } return null; });
+        settings.onChange((key) => { if (key === 'upload') uploader.kick(); if (key === 'experiment') { showExpButton(); return render(); } return null; });
 
+        uploader.start();
         await link.init();
         log.info('hba_assist ready (diagnostic link ' + (link.ready ? 'up' : 'down: ' + link.error) + ', experiment ' + settings.get('experiment') + ')');
         showExpButton();
