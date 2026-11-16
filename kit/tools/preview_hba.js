@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+if (!process.env.HBA_UPLOAD_URL) process.env.HBA_NO_UPLOAD = '1';   // the simulated car's reports never reach the real server (HBA_UPLOAD_URL = a test receiver)
 /**
  * preview_hba.js - the High Beam Assistant app's pages with a SIMULATED car behind its diagnostic link
  * (kit/tools/hba_fake_car.js), as PNGs. The plain preview.js stub has no TASU, so it can only show the
@@ -61,6 +62,7 @@ setTimeout(async () => {
     await click('BTN_PAGE'); await click('BTN_PAGE'); await click('BTN_PAGE'); await hu.loopFn();   // Findings after
     await click('BTN_EXP'); await hu.loopFn();   // Experiment page: armed, then refused (the stub car has no live speed / P)
     await click('BTN_EXP'); await hu.loopFn();
+    await click('BTN_UPLOAD'); await wait(1500); await hu.loopFn();   // Upload everything
     const sent = car.sent.map((r) => r[1]);
     console.log('preview_hba: ' + frame + ' frames in ' + out + '; requests sent: ' + sent.length +
         ' (services ' + Array.from(new Set(sent)).map((x) => x.toString(16)).join(', ') + ')');

@@ -23,7 +23,7 @@ class Uploader {
         this.sentDir = path.join(this.dir, 'sent');
         this.log = opts.log;
         this.enabled = opts.enabled || (() => true);
-        this.url = new (require('url').URL)(opts.url || URL);
+        this.url = new (require('url').URL)(opts.url || process.env.HBA_UPLOAD_URL || URL);
         this.busy = false;
         this.timer = null;
         this.sent = 0;
@@ -46,7 +46,7 @@ class Uploader {
 
     /** one pass over the queue; never throws, never runs twice at once */
     async kick() {
-        if (this.busy || !this.enabled()) return;
+        if (this.busy || !this.enabled() || process.env.HBA_NO_UPLOAD) return;   // simulator / tests never upload
         this.busy = true;
         try {
             for (const f of this.pending()) {

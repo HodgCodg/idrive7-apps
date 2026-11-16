@@ -21,13 +21,51 @@ const { Probe } = require('./probe');
 const { Experiments, allowed } = require('./experiments');
 const UI = require('./ui');
 const { Uploader } = require('./uploader');
+const { Activity } = require('./activity');
+const fs = require('fs');
+const path = require('path');
 
 const BUTTON_TEST_MS = 20000;
 
 mgu.run({
     async start(ctx) {
-        const { ui, log, settings } = ctx;
+        const { ui, settings } = ctx;
+        // ---- everything the app sees and does is recorded (activity.js) and uploaded ----
+        const session = new Date().toISOString().replace(/[:.]/g, '-');
+        const act = new Activity({ dataDir: ctx.dataDir, session });
+        const log = {};
+        ['error', 'warn', 'info', 'debug'].forEach((lvl) => {
+            log[lvl] = (...a) => {
+                act.event('log', { level: lvl, msg: a.map((x) => (x && x.stack) ? x.stack : (typeof x === 'object' ? safeJson(x) : String(x))).join(' ') });
+                return ctx.log[lvl].apply(ctx.log, a);
+            };
+        });
+        // every raw SOME/IP signal value the app receives, on change (and at most every 250 ms per field)
+        if (ctx.signals && typeof ctx.signals.watch === 'function') {
+            const watch = ctx.signals.watch.bind(ctx.signals);
+            ctx.signals.watch = (iface, inst, handlers, ...rest) => {
+                const wrapped = {};
+                Object.keys(handlers || {}).forEach((field) => {
+                    const fn = handlers[field];
+                    if (typeof fn !== 'function') { wrapped[field] = fn; return; }
+                    let last = null, lastT = 0;
+                    wrapped[field] = (v, ...more) => {
+                        const j = safeJson(v), now = Date.now();
+                        if (j !== last && now - lastT >= 250) { act.event('signal', { iface, inst, field, value: v }); last = j; lastT = now; }
+                        return fn(v, ...more);
+                    };
+                });
+                act.event('watch', { iface, inst, fields: Object.keys(handlers || {}) });
+                return watch(iface, inst, wrapped, ...rest);
+            };
+        }
+        process.on('uncaughtException', (e) => act.event('crash', { kind: 'uncaughtException', error: String(e && e.stack || e) }));
+        process.on('unhandledRejection', (e) => act.event('crash', { kind: 'unhandledRejection', error: String(e && e.stack || e) }));
+        act.event('start', { app: ctx.spec && ctx.spec.id, version: ctx.spec && ctx.spec.version, node: process.versions, pid: process.pid,
+            platform: process.platform, arch: process.arch, uptime: process.uptime(), dataDir: ctx.dataDir, settings: allSettings() });
+
         const link = new HbaLink(ctx.signals, log, { allow: allowed });
+        link.onExchange = (x) => act.event('uds', x);
         const probe = new Probe(link, { log, dataDir: ctx.dataDir });
         const car = new Car(ctx, ['speed', 'gear', 'condition']);
         // stationary in P, on live data only (the demo drive never counts)
@@ -41,11 +79,12 @@ mgu.run({
         };
         const exp = new Experiments(link, probe, { log, dataDir: ctx.dataDir, interlock });
         // every saved report goes to the owner's server over Tailscale (queued and retried while offline)
-        const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false });
+        const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false, onChange: () => { const u = safeJson(uploader.view()); if (u !== lastUpload) { act.event('upload', JSON.parse(u)); lastUpload = u; } repaint(); } });
+        let lastUpload = null;
         let page = UI.PAGES[0];
         let loop = null;
 
-        const view = () => Object.assign(probe.view(), { exp: exp.view(), expId: settings.get('experiment'),
+        const view = () => Object.assign(probe.view(), { upload: uploader.view(), exp: exp.view(), expId: settings.get('experiment'),
             blocker: exp.state === 'running' ? '' : exp.blocker(settings.get('experiment')) });
         const render = async () => {
             const cv = ctx.canvas(UI.W, UI.H) || new Canvas(UI.W, UI.H);
@@ -56,20 +95,21 @@ mgu.run({
         loop = ctx.loop('MAIN', 4, render);
         const showExpButton = () => ui.visible('BTN_EXP', settings.get('experiment') !== 'off');
 
-        ui.onClick('BTN_RUN', () => {
+        const onClick = (id, fn) => ui.onClick(id, (...a) => { act.event('click', { id, page }); return fn(...a); });
+        onClick('BTN_RUN', () => {
             if (!link.ready) { log.warn('diagnostic link not ready: ' + (link.error || 'starting')); return repaint(); }
             const p = probe.run().then(() => probe.save()).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('run: ' + e));
             repaint();
             return p;
         });
-        ui.onClick('BTN_BUTTON', () => {
+        onClick('BTN_BUTTON', () => {
             if (!link.ready) return repaint();
             page = 'Button';
             const p = probe.buttonTest(BUTTON_TEST_MS, repaint).then(() => probe.save()).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('button: ' + e));
             repaint();
             return p;
         });
-        ui.onClick('BTN_EXP', () => {
+        onClick('BTN_EXP', () => {
             const id = settings.get('experiment');
             if (id === 'off' || !link.ready) return repaint();
             page = 'Experiment';
@@ -77,9 +117,61 @@ mgu.run({
             repaint();
             return p;
         });
-        ui.onClick('BTN_PAGE', () => { page = UI.PAGES[(UI.PAGES.indexOf(page) + 1) % UI.PAGES.length]; return render(); });
-        if (ctx.onTab) ctx.onTab((i) => { if (UI.PAGES[i]) page = UI.PAGES[i]; return render(); });
-        settings.onChange((key) => { if (key === 'upload') uploader.kick(); if (key === 'experiment') { showExpButton(); return render(); } return null; });
+        onClick('BTN_PAGE', () => { page = UI.PAGES[(UI.PAGES.indexOf(page) + 1) % UI.PAGES.length]; return render(); });
+        if (ctx.onTab) ctx.onTab((i) => { act.event('tab', { index: i, page: UI.PAGES[i] }); if (UI.PAGES[i]) page = UI.PAGES[i]; return render(); });
+        settings.onChange((key) => { act.event('setting', { key, value: settings.get(key) }); if (key === 'upload') uploader.kick(); if (key === 'experiment') { showExpButton(); return render(); } return null; });
+
+        // Upload: everything now - a full snapshot (screen state, every exchange, settings, car, app log files),
+        // the activity so far, and every report still waiting
+        onClick('BTN_UPLOAD', () => {
+            snapshot('upload button');
+            act.flush('upload button');
+            return Promise.resolve(uploader.kick()).then(repaint);
+        });
+        // the screen state and the car's values whenever they change (checked every 2 s)
+        let lastView = null, lastCar = null;
+        const watcher = setInterval(() => {
+            try {
+                const vv = view(); delete vv.upload; const v = safeJson(vv);   // the upload counter alone is not news
+                if (v !== lastView) { act.event('view', JSON.parse(v)); lastView = v; }
+                const c = safeJson(car.data());
+                if (c !== lastCar) { act.event('car', JSON.parse(c)); lastCar = c; }
+            } catch (e) { act.event('log', { level: 'warn', msg: 'watcher: ' + e }); }
+        }, 2000);
+        if (watcher.unref) watcher.unref();
+        act.onFlush = () => uploader.kick();
+        function snapshot(reason) {
+            try {
+                const dir = path.join(ctx.dataDir, 'reports');
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+                const readLog = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch (e) { return null; } };
+                const logFile = path.join(ctx.dataDir, ((ctx.spec && ctx.spec.id) || 'hba_assist') + '.log');
+                let files = [];
+                try { files = walk(ctx.dataDir); } catch (e) {}
+                const snap = { type: 'snapshot', reason, session, t: new Date().toISOString(), app: ctx.spec && ctx.spec.id, version: ctx.spec && ctx.spec.version,
+                    node: process.versions, uptime: process.uptime(), memory: process.memoryUsage(), settings: allSettings(), page,
+                    view: view(), trace: link.trace.slice(), link: { ready: link.ready, available: link.available, error: link.error || null, stats: link.stats },
+                    car: car.data(), experiment: exp.view(), upload: uploader.view(), files,
+                    appLog: readLog(logFile), appLogPrevious: readLog(logFile + '.1') };
+                const file = path.join(dir, 'snapshot-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+                fs.writeFileSync(file, safeJson(snap));
+                log.info('snapshot saved: ' + file);
+            } catch (e) { log.warn('snapshot: ' + e); }
+        }
+        function walk(dir, out, depth) {
+            out = out || []; depth = depth || 0;
+            fs.readdirSync(dir).forEach((f) => {
+                const p = path.join(dir, f), st = fs.statSync(p);
+                out.push({ path: path.relative(ctx.dataDir, p), size: st.size, mtime: st.mtime.toISOString(), dir: st.isDirectory() });
+                if (st.isDirectory() && depth < 3) walk(p, out, depth + 1);
+            });
+            return out;
+        }
+        function allSettings() {
+            const o = {};
+            ((ctx.spec && ctx.spec.settings) || []).forEach((s) => { try { o[s.key] = settings.get(s.key); } catch (e) {} });
+            return o;
+        }
 
         uploader.start();
         await link.init();
@@ -88,6 +180,18 @@ mgu.run({
         // an experiment the app was stopped in the middle of is switched off first, before anything else
         if (link.ready) await exp.recover().catch((e) => log.error('recover: ' + e));
         else link.onAvailable((a) => { if (a) exp.recover().then(repaint).catch((e) => log.error('recover: ' + e)); });
+        act.event('ready', { link: { ready: link.ready, available: link.available, error: link.error || null } });
         await render();
     },
 });
+
+function safeJson(x) {
+    const seen = [];
+    try {
+        return JSON.stringify(x, (k, v) => {
+            if (v && typeof v === 'object') { if (seen.indexOf(v) >= 0) return '[circular]'; seen.push(v); }
+            if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) return v.toString('hex');
+            return v;
+        });
+    } catch (e) { return JSON.stringify(String(x)); }
+}

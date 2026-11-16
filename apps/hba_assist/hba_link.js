@@ -91,6 +91,7 @@ class HbaLink {
             if (uds) this.stats.replies++; else if (!err) this.stats.missed++;
             this.trace.push({ t: new Date(t0).toISOString(), req, res, ms });
             if (this.trace.length > 200) this.trace.shift();
+            if (this.onExchange) { try { this.onExchange({ t: new Date(t0).toISOString(), target: hex(target), req, res, ms, error: err ? String(err.message || err) : null }); } catch (e) {} }
             if (this.verbose) this.log.info('UDS ' + req + ' -> ' + res + ' (' + ms + ' ms)');
             await sleep(this.gapMs);
             if (err) throw err;

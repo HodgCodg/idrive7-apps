@@ -36,7 +36,12 @@ FLA_FSC_Missing`, `800A01 FLA_Misconfiguration`, calibration `800AC4`/`800AC8`).
 
 Each run and each button test is saved with **every raw request and reply** to
 `data/reports/hba-<time>.json`, and every exchange is in the app log (`UDS 5D 22 E4 82 -> 62 E4 82 00 (38 ms)`).
-**Upload (0.3.0):** each saved report is also sent over Tailscale to the owner's server (`uploader.js`, `http://100.73.22.59:8771/hba/upload`, received by `deploy/hba-receiver/`). A report that can't be sent stays in `data/reports/` and is retried every 60 s and after each new report; a sent one moves to `data/reports/sent/`. Setting *Upload reports (Tailscale)*, on by default.
+**Upload (0.4.0):** everything the app sees and does goes over Tailscale to the owner's server (`uploader.js` -> `http://100.73.22.59:8771/hba/upload`, received by `deploy/hba-receiver/` into `~/hba-reports/`):
+- each saved report (`hba-*`, `experiment-*`)
+- `activity-*`: every event as it happens (`activity.js`): each diagnostic request / reply with full bytes, every log line, button press, page / tab / setting change, every raw SOME/IP signal value received (on change), the screen state and car values whenever they change, upload state, crashes. Written line by line to `data/activity/current.jsonl` and sent every 60 s (or at 2 MB)
+- **Upload everything** button: a `snapshot-*` (screen state, last 200 exchanges, settings, car values, link stats, data-folder listing, the app log files), the activity so far, and anything still waiting
+
+The badge top right shows UPLOADED n, UPLOAD WAITING n (server not reached yet; retried every 60 s) or UPLOAD OFF. Sent files move to `data/reports/sent/`. Setting *Upload reports (Tailscale)*, on by default.
 
 Requests time out after 2 s (fault memory 6 s). A unit that does not answer `22 F150` gets no further
 requests.

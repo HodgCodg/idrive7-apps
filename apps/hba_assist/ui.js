@@ -42,10 +42,19 @@ function status(v) {
     return 'Checked ' + v.started.replace('T', ' ').slice(0, 19) + ' UTC  ·  ' + v.stats.replies + ' replies, ' + v.stats.missed + ' unanswered, ' + v.stats.refused + ' refused';
 }
 
+function upload(v) {
+    const u = v.upload;
+    if (!u) return null;
+    if (!u.enabled) return ['Upload: off (setting)', 'dim'];
+    const head = 'Upload to server: ' + u.sent + ' sent this session, ' + u.pending + ' waiting';
+    if (u.error) return [head + ' - server not reached: ' + u.error, 'warn'];
+    return [head + (u.last ? ' - last: ' + u.last : ''), u.pending ? 'dim' : 'accent'];
+}
+
 function findings(cv, G, t, v) {
     const p = G.panel(cv, t, 20, G.TOP + 8, W - 40, G.BOTTOM - G.TOP - 16, 'What the car says');
     const items = v.findings.length ? v.findings.map((f) => [(f.basis === 'inference' ? '(inferred) ' : '') + f.text, LEVEL[f.level]]) : [['No results yet.', 'dim']];
-    lines(cv, t, p.x + 20, p.y + 52, p.w - 40, [[status(v), 'dim']].concat(items), 22, p.y + p.h - 8);
+    lines(cv, t, p.x + 20, p.y + 52, p.w - 40, [[status(v), 'dim']].concat(upload(v) ? [upload(v)] : [], items), 22, p.y + p.h - 8);
 }
 
 function kafas(cv, G, t, v) {
@@ -123,10 +132,19 @@ function experiment(cv, G, t, v) {
     lines(cv, t, mid, p.y + 52, p.x + p.w - mid - 20, ev.length ? ev : [['No events yet.', 'dim']], 18, p.y + p.h - 8);
 }
 
+// on every page: SENT n when nothing is waiting, WAITING n when the server has not been reached yet
+function uploadBadge(v) {
+    const u = v.upload;
+    if (!u) return null;
+    if (!u.enabled) return { text: 'UPLOAD OFF' };
+    if (u.pending) return { text: 'UPLOAD WAITING ' + u.pending };
+    return { text: 'UPLOADED ' + u.sent };
+}
+
 function draw(cv, G, t, v, page) {
     cv.clear(t.bg);
     G.frame(cv, t, PAGES, PAGES.indexOf(page), [v.state === 'running' && { text: 'READING' }, v.state === 'button' && { text: 'BUTTON TEST' },
-        v.exp && v.exp.state === 'running' && { text: 'EXPERIMENT' }]);
+        v.exp && v.exp.state === 'running' && { text: 'EXPERIMENT' }, uploadBadge(v)]);
     if (page === 'KAFAS') kafas(cv, G, t, v);
     else if (page === 'Button') button(cv, G, t, v);
     else if (page === 'Interfaces') interfaces(cv, G, t, v);
