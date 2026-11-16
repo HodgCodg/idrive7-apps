@@ -8,6 +8,15 @@
  *
  *   const up = new Uploader({ dataDir, log, enabled: () => true });
  *   up.start();   up.kick();   up.view() -> { pending, sent, last, error }
+ *
+ * PULL: Tailscale on the head unit runs in userspace mode, so the app has no route OUT to the tailnet
+ * (connect ENETUNREACH). Connections IN still work: tailscaled hands them to 127.0.0.1. So the uploader
+ * also serves the queue on 127.0.0.1:PULL_PORT, and the server pulls it (deploy/hba-receiver):
+ *   GET  /hba/flush            the activity so far becomes a report now (opts.onFlush)
+ *   GET  /hba/list             [{ name, size }] of everything waiting
+ *   GET  /hba/file?name=x      one report
+ *   POST /hba/ack?name=x       the server has it: moved to reports/sent/
+ * Localhost only: nothing on the car's own networks can reach it.
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,6 +25,8 @@ const http = require('http');
 const URL = 'http://100.73.22.59:8771/hba/upload';   // hhatx-ai on the tailnet
 const RETRY_MS = 60000;
 const TIMEOUT_MS = 15000;
+const PULL_PORT = 8772;
+const CONTACT_MS = 5 * 60000;   // a pull this recent = the server is reached; pushing is skipped meanwhile
 
 class Uploader {
     constructor(opts) {
@@ -30,11 +41,67 @@ class Uploader {
         this.last = null;
         this.error = null;
         this.onChange = opts.onChange || (() => {});
+        this.onFlush = opts.onFlush || (() => {});
+        this.contact = 0;          // last time the server was reached (push or pull)
+        this.via = null;
+        this.server = null;
+    }
+
+    /** the pull endpoint on 127.0.0.1 (see top) */
+    serve(port) {
+        if (this.server || process.env.HBA_NO_UPLOAD) return;
+        const send = (res, code, type, body) => { res.writeHead(code, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body) }); res.end(body); };
+        this.server = http.createServer((req, res) => {
+            try {
+                const u = new (require('url').URL)(req.url, 'http://x');
+                const name = path.basename(u.searchParams.get('name') || '');
+                const file = path.join(this.dir, name);
+                if (!this.enabled()) return send(res, 403, 'text/plain', 'upload is off');
+                this._contact('pull');
+                if (u.pathname === '/hba/flush') { this.onFlush(); return send(res, 200, 'application/json', '{"ok":true}'); }
+                if (u.pathname === '/hba/list') {
+                    return send(res, 200, 'application/json', JSON.stringify(this.pending().map((f) => {
+                        let size = 0; try { size = fs.statSync(path.join(this.dir, f)).size; } catch (e) {}
+                        return { name: f, size };
+                    })));
+                }
+                if (!/\.json$/.test(name) || !fs.existsSync(file)) return send(res, 404, 'text/plain', 'no such report');
+                if (u.pathname === '/hba/file' && req.method === 'GET') {
+                    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': fs.statSync(file).size });
+                    return fs.createReadStream(file).pipe(res);
+                }
+                if (u.pathname === '/hba/ack' && req.method === 'POST') {
+                    this._sent(name, 'pulled');
+                    this.onChange();
+                    return send(res, 200, 'application/json', '{"ok":true}');
+                }
+                return send(res, 404, 'text/plain', 'not found');
+            } catch (e) { return send(res, 500, 'text/plain', String(e)); }
+        });
+        this.server.on('error', (e) => { this.log.warn('pull endpoint: ' + e.message); this.server = null; });
+        this.server.listen(port || PULL_PORT, '127.0.0.1', () => this.log.info('pull endpoint on 127.0.0.1:' + (port || PULL_PORT)));
+    }
+
+    _contact(via) {
+        const was = this.contact && Date.now() - this.contact < CONTACT_MS;
+        this.contact = Date.now(); this.via = via; this.error = null;
+        if (!was) { this.log.info('server reached (' + via + ')'); this.onChange(); }
+    }
+
+    _sent(f, how) {
+        try {
+            if (!fs.existsSync(this.sentDir)) fs.mkdirSync(this.sentDir);
+            fs.renameSync(path.join(this.dir, f), path.join(this.sentDir, f));
+        } catch (e) { if (e.code !== 'ENOENT') throw e; return; }
+        this.sent++;
+        this.last = f;
+        if (how !== 'pulled') this.log.info(how + ' ' + f);   // pulls are logged by the server (a log line here would be news to pull again)
     }
 
     start() {
         if (!this.timer) this.timer = setInterval(() => this.kick(), RETRY_MS);
         if (this.timer.unref) this.timer.unref();
+        this.serve();
         return this.kick();
     }
 
@@ -42,11 +109,15 @@ class Uploader {
         try { return fs.readdirSync(this.dir).filter((f) => f.endsWith('.json')).sort(); } catch (e) { return []; }
     }
 
-    view() { return { enabled: !!this.enabled(), pending: this.pending().length, sent: this.sent, last: this.last, error: this.error }; }
+    view() {
+        return { enabled: !!this.enabled(), pending: this.pending().length, sent: this.sent, last: this.last, error: this.error,
+            reached: !!this.contact && Date.now() - this.contact < CONTACT_MS, via: this.via, contact: this.contact ? new Date(this.contact).toISOString() : null };
+    }
 
     /** one pass over the queue; never throws, never runs twice at once */
     async kick() {
         if (this.busy || !this.enabled() || process.env.HBA_NO_UPLOAD) return;   // simulator / tests never upload
+        if (this.via === 'pull' && Date.now() - this.contact < CONTACT_MS) return;   // the server is pulling: nothing to push
         this.busy = true;
         try {
             for (const f of this.pending()) {
@@ -56,16 +127,13 @@ class Uploader {
                 try {
                     await this._post(f, body);
                 } catch (e) {
-                    this.error = String(e.message || e);
-                    this.log.warn('upload ' + f + ': ' + this.error + ' (retry in ' + RETRY_MS / 1000 + ' s)');
+                    const msg = String(e.message || e);
+                    if (msg !== this.error) this.log.warn('push ' + f + ': ' + msg + ' (retried every ' + RETRY_MS / 1000 + ' s; the server can also pull)');
+                    this.error = msg;
                     break;   // the server is unreachable: stop this pass, try again later
                 }
-                if (!fs.existsSync(this.sentDir)) fs.mkdirSync(this.sentDir);
-                fs.renameSync(file, path.join(this.sentDir, f));
-                this.sent++;
-                this.last = f;
-                this.error = null;
-                this.log.info('uploaded ' + f + ' (' + body.length + ' bytes)');
+                this._contact('push');
+                this._sent(f, 'pushed');
             }
         } catch (e) {
             this.error = String(e.message || e);
@@ -94,4 +162,4 @@ class Uploader {
     }
 }
 
-module.exports = { Uploader, URL };
+module.exports = { Uploader, URL, PULL_PORT };

@@ -47,7 +47,8 @@ function upload(v) {
     if (!u) return null;
     if (!u.enabled) return ['Upload: off (setting)', 'dim'];
     const head = 'Upload to server: ' + u.sent + ' sent this session, ' + u.pending + ' waiting';
-    if (u.error) return [head + ' - server not reached: ' + u.error, 'warn'];
+    if (u.reached) return [head + ' - server connected (' + u.via + ', ' + u.contact.slice(11, 19) + ' UTC)' + (u.last ? ' - last: ' + u.last : ''), 'accent'];
+    if (u.error) return [head + ' - server not reached yet: ' + u.error, 'warn'];
     return [head + (u.last ? ' - last: ' + u.last : ''), u.pending ? 'dim' : 'accent'];
 }
 
@@ -137,6 +138,7 @@ function uploadBadge(v) {
     const u = v.upload;
     if (!u) return null;
     if (!u.enabled) return { text: 'UPLOAD OFF' };
+    if (u.reached) return { text: 'UPLOADED ' + u.sent + (u.pending ? ' +' + u.pending : '') };
     if (u.pending) return { text: 'UPLOAD WAITING ' + u.pending };
     return { text: 'UPLOADED ' + u.sent };
 }

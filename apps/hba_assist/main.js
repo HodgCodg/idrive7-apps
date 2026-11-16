@@ -79,7 +79,7 @@ mgu.run({
         };
         const exp = new Experiments(link, probe, { log, dataDir: ctx.dataDir, interlock });
         // every saved report goes to the owner's server over Tailscale (queued and retried while offline)
-        const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false, onChange: () => { const u = safeJson(uploader.view()); if (u !== lastUpload) { act.event('upload', JSON.parse(u)); lastUpload = u; } repaint(); } });
+        const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false, onFlush: () => act.flush('server pull'), onChange: () => { const uv = uploader.view(); const u = safeJson({ enabled: uv.enabled, reached: uv.reached, via: uv.via, error: uv.error });  /* counters alone are not news */ if (u !== lastUpload) { act.event('upload', JSON.parse(u)); lastUpload = u; } repaint(); } });
         let lastUpload = null;
         let page = UI.PAGES[0];
         let loop = null;

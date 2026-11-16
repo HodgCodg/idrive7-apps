@@ -36,10 +36,12 @@ FLA_FSC_Missing`, `800A01 FLA_Misconfiguration`, calibration `800AC4`/`800AC8`).
 
 Each run and each button test is saved with **every raw request and reply** to
 `data/reports/hba-<time>.json`, and every exchange is in the app log (`UDS 5D 22 E4 82 -> 62 E4 82 00 (38 ms)`).
-**Upload (0.4.0):** everything the app sees and does goes over Tailscale to the owner's server (`uploader.js` -> `http://100.73.22.59:8771/hba/upload`, received by `deploy/hba-receiver/` into `~/hba-reports/`):
+**Upload (0.5.0):** everything the app sees and does goes over Tailscale to the owner's server (`uploader.js` -> `http://100.73.22.59:8771/hba/upload`, received by `deploy/hba-receiver/` into `~/hba-reports/`):
 - each saved report (`hba-*`, `experiment-*`)
 - `activity-*`: every event as it happens (`activity.js`): each diagnostic request / reply with full bytes, every log line, button press, page / tab / setting change, every raw SOME/IP signal value received (on change), the screen state and car values whenever they change, upload state, crashes. Written line by line to `data/activity/current.jsonl` and sent every 60 s (or at 2 MB)
 - **Upload everything** button: a `snapshot-*` (screen state, last 200 exchanges, settings, car values, link stats, data-folder listing, the app log files), the activity so far, and anything still waiting
+
+The car's Tailscale runs in userspace mode, so the app can't connect out (`ENETUNREACH`); the server **pulls** instead: the app serves its queue on `127.0.0.1:8772` (`/hba/flush`, `/hba/list`, `/hba/file`, `/hba/ack`), which tailscaled forwards incoming tailnet connections to, and `hba_receiver.py` polls `mgu` (100.70.87.25:8772) every 20 s. Push is still tried while no pull has come in.
 
 The badge top right shows UPLOADED n, UPLOAD WAITING n (server not reached yet; retried every 60 s) or UPLOAD OFF. Sent files move to `data/reports/sent/`. Setting *Upload reports (Tailscale)*, on by default.
 
