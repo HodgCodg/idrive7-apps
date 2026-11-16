@@ -1226,5 +1226,6 @@
   "Start / stop experiment": "开始 / 停止实验",
   "Off (nothing is sent)": "关闭（不发送）",
   "E1: KAFAS demo mode": "E1：KAFAS 演示模式",
-  "E2: BDC demo routine": "E2：BDC 演示程序"
+  "E2: BDC demo routine": "E2：BDC 演示程序",
+  "Upload reports (Tailscale)": "上传报告（Tailscale）"
 }
