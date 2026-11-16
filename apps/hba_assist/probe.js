@@ -210,7 +210,14 @@ class Probe {
         [D.BDC, D.KAFAS].forEach((a) => {
             const f = this.faults[a];
             if (!f || !f.list) return;
-            f.list.filter((d) => d.relevant).forEach((d) => add('crit', (a === D.BDC ? 'BDC' : 'KAFAS') + ' fault ' + d.hex + ': ' + d.text + ' (status ' + D.hex(d.status) + ')'));
+            // 19 02 FF lists every code the unit knows; only the status says whether it ever FAILED:
+            // 0x01 failed now, 0x08 confirmed, 0x04 pending, 0x20 failed since clear. 0x40 / 0x50 alone = only
+            // "not tested yet (this cycle / since clear)": not a fault, never shown as one.
+            const name = a === D.BDC ? 'BDC' : 'KAFAS';
+            f.list.filter((d) => d.relevant && (d.status & 0x2D)).forEach((d) => add(d.status & 0x09 ? 'crit' : 'warn',
+                name + ' fault ' + d.hex + ': ' + d.text + ' (status ' + D.hex(d.status) + (d.status & 0x09 ? ', active / confirmed' : ', failed earlier, not now') + ')'));
+            const quiet = f.list.filter((d) => d.relevant && !(d.status & 0x2D));
+            if (quiet.length) add('info', name + ': ' + quiet.length + ' HBA-related code(s) listed but never failed (' + quiet.map((d) => d.hex + ' status ' + D.hex(d.status)).join(', ') + ') - not faults');
         });
         const b = this.button;
         if (b.ran) {
