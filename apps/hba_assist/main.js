@@ -6,7 +6,7 @@
  *
  * Checks are READ-ONLY (22 / 19 02). The only writes are the experiments' exact frames
  * (experiments.js): Setting "Experiment" ships Off (then nothing but reads is ever sent), the car must be
- * stationary in P on live data, the button is pressed twice, and every run is switched back off at its end,
+ * the button is pressed twice (any speed, any gear since 0.6.0), and every run is switched back off at its end,
  * on its 60 s timeout and at the next app start if the app stopped during one.
  *
  * Opening the app sends nothing but the switch-off of an unfinished experiment. Every run is saved with its
@@ -68,15 +68,10 @@ mgu.run({
         link.onExchange = (x) => act.event('uds', x);
         const probe = new Probe(link, { log, dataDir: ctx.dataDir });
         const car = new Car(ctx, ['speed', 'gear', 'condition']);
-        // stationary in P, on live data only (the demo drive never counts)
-        const interlock = () => {
-            const d = car.data();
-            if (d.demo) return { ok: false, why: 'no live vehicle data' };
-            if (typeof d.speed !== 'number') return { ok: false, why: 'vehicle speed unknown' };
-            if (d.speed > 0.5) return { ok: false, why: 'the car is moving' };
-            if (d.stage !== 'P') return { ok: false, why: 'selector not in P (' + (d.stage || 'unknown') + ')' };
-            return { ok: true, why: '' };
-        };
+        // no parked-only gate since 0.6.0: the owner runs the experiments while driving (his call). The speed and
+        // selector are still recorded with every run (activity log), and the other safeguards stay: double press,
+        // 60 s limit, any press stops, switched back at the end / next start.
+        const interlock = () => ({ ok: true, why: '' });
         const exp = new Experiments(link, probe, { log, dataDir: ctx.dataDir, interlock });
         // every saved report goes to the owner's server over Tailscale (queued and retried while offline)
         const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false, onFlush: () => act.flush('server pull'), onChange: () => { const uv = uploader.view(); const u = safeJson({ enabled: uv.enabled, reached: uv.reached, via: uv.via, error: uv.error });  /* counters alone are not news */ if (u !== lastUpload) { act.event('upload', JSON.parse(u)); lastUpload = u; } repaint(); } });

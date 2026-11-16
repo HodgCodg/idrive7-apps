@@ -39,9 +39,9 @@ const SESSION = Object.freeze([[0x10, [0x01]], [0x10, [0x03]], [0x3E, [0x00]]]);
 
 const EXPERIMENTS = Object.freeze({
     kafas: { id: 'kafas', title: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', ecu: D.KAFAS, sgbd: 'KAFAS04', start: 'e1On', stop: 'e1Off',
-        warn: 'Car stationary in P. KAFAS demo mode on for up to 60 s, then off.' },
+        warn: 'KAFAS demo mode on for up to 60 s, then off.' },
     bdc: { id: 'bdc', title: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)', ecu: D.BDC, sgbd: 'BDC_G05', start: 'e2Start', stop: 'e2Stop',
-        warn: 'HEADLIGHTS MAY SWITCH: aim the car at a wall, nobody in front. Stationary in P. Up to 60 s, then stopped.' },
+        warn: 'Headlights may switch. Up to 60 s, then stopped.' },
 });
 
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);

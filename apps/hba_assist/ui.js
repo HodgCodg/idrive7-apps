@@ -112,7 +112,7 @@ function experiment(cv, G, t, v) {
     const left = [];
     if (!id || id === 'off') {
         left.push(['Off: nothing but reads is sent. Pick E1 or E2 in Settings, Experiment, to run one.', 'dim']);
-        left.push(['E1 switches KAFAS\'s HBA demo mode on, E2 starts the BDC\'s HBA demo routine with the camera\'s limits. Each runs up to 60 s on the stationary car, then is switched off.', 'dim']);
+        left.push(['E1 switches KAFAS\'s HBA demo mode on, E2 starts the BDC\'s HBA demo routine with the camera\'s limits. Each runs up to 60 s (parked or driving), then is switched off.', 'dim']);
     } else {
         left.push([EXP_TITLE[id] || id, 'text']);
         if (id === 'bdc') left.push(['HEADLIGHTS MAY SWITCH: aim the car at a wall, nobody in front.', 'warn']);
