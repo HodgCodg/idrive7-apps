@@ -157,6 +157,23 @@ class Probe {
             o.reasons = why ? why.active : null;
             o.opTime = fa ? fa.opTime : null;
         }
+        if (this.present(D.BDC)) {
+            // what the BDC itself does with the lamps (BDC_G05): D542 LEUCHTEN_FUNKTION, byte 5 = STAT_FUNKTION_FERNLICHT
+            // (high beam / flash on); D57E light assist: byte 8 STAT_ST_HBA_ENA, 21 STAT_ST_STATE_HBA, 23 STAT_ST_STATE_GFHBA
+            // (TAB_LA_FUNCTIONSTATE 0 off, 1 disabled, 2 init, 3 standby, 4 ACTIVE, 5 diag, 6 error). Raw kept too.
+            const lf = await this.link.read(D.BDC, 0xD542, 1000);
+            const la = await this.link.read(D.BDC, 0xD57E, 1000);
+            const body = (r, did) => (r && r[0] === 0x62 && r[1] === (did >> 8) && r[2] === (did & 0xFF) ? r.slice(3) : null);
+            const l = body(lf, 0xD542), a = body(la, 0xD57E);
+            const STATE = ['off', 'disabled', 'init', 'standby', 'ACTIVE', 'diag', 'error'];
+            o.bdc = {
+                highBeam: l && l.length > 5 ? l[5] : null,
+                hbaEnabled: a && a.length > 8 ? a[8] : null,
+                hbaState: a && a.length > 21 ? (STATE[a[21]] || D.hex(a[21])) : null,
+                gfhbaState: a && a.length > 23 ? (STATE[a[23]] || D.hex(a[23])) : null,
+                rawD542: lf ? D.hexs(lf) : null, rawD57E: la ? D.hexs(la) : null,
+            };
+        }
         return o;
     }
 

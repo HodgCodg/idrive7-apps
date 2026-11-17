@@ -103,7 +103,8 @@ function interfaces(cv, G, t, v) {
     lines(cv, t, p.x + 20, p.y + 52, p.w - 40, items, 20, p.y + p.h - 8);
 }
 
-const EXP_TITLE = { kafas: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', bdc: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)' };
+const EXP_TITLE = { kafas: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', bdc: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)',
+    beam: 'E3  High beams ON, held by the app (2E D542)', auto: 'E4  App high beam assistant: camera view -> high beams (2E D542)' };
 
 function experiment(cv, G, t, v) {
     const p = G.panel(cv, t, 20, G.TOP + 8, W - 40, G.BOTTOM - G.TOP - 16, 'Live-diagnostic experiment (BMW demo jobs, not the factory switch)');
@@ -112,7 +113,7 @@ function experiment(cv, G, t, v) {
     const left = [];
     if (!id || id === 'off') {
         left.push(['Off: nothing but reads is sent. Pick E1 or E2 in Settings, Experiment, to run one.', 'dim']);
-        left.push(['E1 switches KAFAS\'s HBA demo mode on, E2 starts the BDC\'s HBA demo routine with the camera\'s limits. Each runs up to 60 s (parked or driving), then is switched off.', 'dim']);
+        left.push(['E1 switches KAFAS\'s HBA demo mode on, E2 starts the BDC\'s HBA demo routine with the camera\'s limits. E1 / E2 run up to 60 s; E3 holds the high beams on (10 min max), E4 switches them from the camera view (30 min max). Press again to stop; each is switched off at the end.', 'dim']);
     } else {
         left.push([EXP_TITLE[id] || id, 'text']);
         if (id === 'bdc') left.push(['HEADLIGHTS MAY SWITCH: aim the car at a wall, nobody in front.', 'warn']);

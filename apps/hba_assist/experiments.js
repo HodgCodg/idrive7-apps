@@ -14,6 +14,14 @@
  *             Stop 31 02 A539; a unit without a stop routine gets 10 01 (and an ignition cycle ends it).
  *             THE HEADLIGHTS MAY SWITCH: aim the car at a wall, nobody in front.
  *
+ *   E3 beam   BDC_G05  2E D542 0005 0064   LEUCHTEN_FUNKTION, ELEMENT 05 HIGH_BEAM, ZEIT 0x0064 = 1.00 s (ZEIT is in
+ *             1/100 s: MUL 100, max 327 s). The app renews it every 400 ms while the run lasts, so the high beams stay
+ *             on; if the app stops, freezes or loses the link they drop back by themselves within a second.
+ *             Off: the same with ZEIT 0000.
+ *   E4 auto   the app's own high beam assistant: KAFAS's live reasons (22 D341: oncoming / ahead / too slow / day /
+ *             town / fog / tunnel / blocked / fail-safe) read every ~250 ms; all clear for 1 s -> E3's 1 s high beam,
+ *             renewed while clear; any reason -> off at once.
+ *
  * Exact frames only (FRAMES + SESSION below); hba_link.js lets nothing else through. Never 27 (security
  * access): a unit that asks for it (NRC 33) ends the experiment. NRC 7E / 7F: one retry in 10 03, kept
  * alive with 3E 00 while it runs, 10 01 at the end.
@@ -34,7 +42,12 @@ const FRAMES = Object.freeze({
     e2Start: [0x40, 0x31, [0x01, 0xA5, 0x39, 0x01, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
     e2Stop: [0x40, 0x31, [0x02, 0xA5, 0x39]],
     e2Results: [0x40, 0x31, [0x03, 0xA5, 0x39]],
+    hbOn: [0x40, 0x2E, [0xD5, 0x42, 0x00, 0x05, 0x00, 0x64]],    // high beam for 1.00 s
+    hbOff: [0x40, 0x2E, [0xD5, 0x42, 0x00, 0x05, 0x00, 0x00]],
 });
+// E4: the D341 reasons that hold the high beam off ('motorway', 'delay' and 'leftHand' are not)
+const BLOCKING = ['oncoming', 'ahead', 'slow', 'daylight', 'town', 'fog', 'tunnel', 'blockage', 'failsafe'];
+const RENEW_MS = 400, AUTO_MS = 250, CLEAR_MS = 1000;
 const SESSION = Object.freeze([[0x10, [0x01]], [0x10, [0x03]], [0x3E, [0x00]]]);   // to 0x40 / 0x5D
 
 const EXPERIMENTS = Object.freeze({
@@ -42,6 +55,10 @@ const EXPERIMENTS = Object.freeze({
         warn: 'KAFAS demo mode on for up to 60 s, then off.' },
     bdc: { id: 'bdc', title: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)', ecu: D.BDC, sgbd: 'BDC_G05', start: 'e2Start', stop: 'e2Stop',
         warn: 'Headlights may switch. Up to 60 s, then stopped.' },
+    beam: { id: 'beam', title: 'E3  High beams ON, held by the app (2E D542 HIGH_BEAM)', ecu: D.BDC, sgbd: 'BDC_G05', start: 'hbOn', stop: 'hbOff',
+        warn: 'High beams ON until you press again (max 10 min).', durationMs: 600000, kind: 'beam' },
+    auto: { id: 'auto', title: 'E4  App high beam assistant (camera reasons -> 2E D542)', ecu: D.BDC, sgbd: 'BDC_G05', start: 'hbOff', stop: 'hbOff',
+        warn: 'The app switches the high beams from the camera\'s view until you press again (max 30 min).', durationMs: 1800000, kind: 'auto' },
 });
 
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -169,8 +186,10 @@ class Experiments {
             if (!r) { this.event('crit', 'no answer to the start request'); return; }
             if (n !== null) { this.event('crit', 'refused: NRC ' + nrcText(n)); return; }
             if (!positive(r, sid)) { this.event('crit', 'unexpected answer ' + D.hexs(r)); return; }
-            this.event('ok', 'accepted (' + D.hexs(r) + '). Watching the cluster indicator for ' + Math.round(this.durationMs / 1000) + ' s');
-            this.endsAt = this.now() + this.durationMs;
+            const dur = exp.durationMs || this.durationMs;
+            this.event('ok', 'accepted (' + D.hexs(r) + '). Running up to ' + Math.round(dur / 1000) + ' s');
+            this.endsAt = this.now() + dur;
+            if (exp.kind) { await this._drive(exp); return; }
             while (!this.stopRequested && this.now() < this.endsAt) {
                 await sleep(this.observeMs);
                 if (this.extended) await this.link.request(exp.ecu, 0x3E, [0x00], 1500);     // tester present: keep the session (and the routine) alive
@@ -195,6 +214,42 @@ class Experiments {
         }
     }
 
+    /** E3 / E4: keep renewing the 1 s high beam (E3 always, E4 while the camera sees nothing in the way) */
+    async _drive(exp) {
+        let lastObs = 0, lastTp = 0, lastOn = 0, clearSince = 0, on = false, switches = 0, refused = 0;
+        while (!this.stopRequested && this.now() < this.endsAt) {
+            const t = this.now();
+            let want = true, why = [];
+            if (exp.kind === 'auto') {
+                const d = D.KAFAS_DIDS[0xD341].decode(await this.link.read(D.KAFAS, 0xD341, 800));
+                why = d ? BLOCKING.filter((k) => d[k]) : ['camera not read'];
+                if (why.length) clearSince = 0; else if (!clearSince) clearSince = t;
+                want = !why.length && t - clearSince >= CLEAR_MS;
+            }
+            if (want && (!on || t - lastOn >= RENEW_MS)) {
+                const r = await this.send('hbOn');
+                if (positive(r, 0x2E)) { if (!on) { switches++; this.event('ok', 'high beams ON'); } on = true; lastOn = t; }
+                else {
+                    const n = nrcOf(r, 0x2E);
+                    if (n === 0x33) { this.event('crit', 'refused: NRC ' + nrcText(n)); break; }
+                    if (++refused <= 3) this.event('warn', 'high beam request ' + (r ? 'refused: NRC ' + nrcText(n) : 'not answered'));
+                }
+            } else if (!want && on) {
+                await this.send('hbOff');
+                on = false;
+                this.event('info', 'high beams off: ' + why.join(', '));
+            }
+            if (this.extended && t - lastTp >= 2000) { await this.link.request(exp.ecu, 0x3E, [0x00], 800); lastTp = t; }
+            if (t - lastObs >= 3000) {
+                lastObs = t;
+                this.samples.push(Object.assign({ phase: 'during', appBeam: on }, await this.probe.observe()));
+                if (this.samples.length > 600) this.samples.splice(1, 1);
+            }
+            await sleep(exp.kind === 'auto' ? AUTO_MS : 150);
+        }
+        this.event('info', 'switched on ' + switches + ' time(s)');
+    }
+
     /** send the experiment's off / stop frame; fall back to the default session; clear the journal */
     async _revert(exp) {
         const f = FRAMES[exp.stop];
@@ -210,6 +265,12 @@ class Experiments {
     }
 
     _verdict() {
+        if (this.current && this.current.kind) {
+            const d = this.samples.filter((s) => s.phase === 'during');
+            const lit = d.filter((s) => s.bdc && s.bdc.highBeam === 1).length, blue = d.filter((s) => s.lamps && s.lamps.highBeam).length;
+            const app = d.filter((s) => s.appBeam).length;
+            return { level: lit || blue ? 'ok' : 'warn', text: 'app had the high beams on in ' + app + ' of ' + d.length + ' readings; BDC high beam on in ' + lit + ', cluster high beam lamp in ' + blue + '.' };
+        }
         const b = this.samples.filter((s) => s.phase === 'before')[0] || {};
         const during = this.samples.filter((s) => s.phase === 'during');
         if (!during.length) return { level: 'info', text: 'not run far enough to observe (see the events above)' };

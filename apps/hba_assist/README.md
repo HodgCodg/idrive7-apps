@@ -50,6 +50,13 @@ requests.
 
 ## Experiments (live diagnostics)
 
+**0.7.0: E3 / E4 switch the high beams themselves** (BDC_G05 `2E D542` LEUCHTEN_FUNKTION, ELEMENT `05` HIGH_BEAM, ZEIT in 1/100 s):
+**E3** holds them on (`40 2E D5 42 00 05 00 64` = 1 s, renewed every ~500 ms, max 10 min); **E4** is the app's own high beam
+assistant: KAFAS `D341` every ~250 ms, high beam on after 1 s with no oncoming / ahead / slow / day / town / fog / tunnel /
+blocked / fail-safe reason, off at once when one appears (max 30 min). Off = ZEIT `00 00`; if the app stops, the 1 s timer
+lets them drop back by themselves. Every observation now also records the BDC's own state: `D542` byte 5 (high beam on)
+and `D57E` (HBA enabled, HBA / glare-free HBA function state).
+
 Settings, **Experiment** (ships **Off**: then nothing but reads is ever sent, and the button is
 hidden). Each is a job from BMW's own SGBD, sent as fixed bytes:
 
