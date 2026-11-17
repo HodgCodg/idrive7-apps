@@ -55,7 +55,9 @@ class Activity {
             raw.split('\n').forEach((l) => { if (l.trim()) { try { events.push(JSON.parse(l)); } catch (e) { events.push({ kind: 'unparsed', data: l }); } } });
             if (!fs.existsSync(this.reports)) fs.mkdirSync(this.reports);
             const out = path.join(this.reports, 'activity-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
-            fs.writeFileSync(out, JSON.stringify({ type: 'activity', session: this.session, reason: reason, flushed: new Date().toISOString(), events: events }));
+            // written to .part then renamed: a head unit shutting down mid-write leaves no half file in the queue
+            fs.writeFileSync(out + '.part', JSON.stringify({ type: 'activity', session: this.session, reason: reason, flushed: new Date().toISOString(), events: events }));
+            fs.renameSync(out + '.part', out);
             this.onFlush(out);
             return out;
         } catch (e) { return null; }

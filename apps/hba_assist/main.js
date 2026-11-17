@@ -175,7 +175,9 @@ mgu.run({
             if (!fs.existsSync(mark) && fs.existsSync(cat)) {
                 const dir = path.join(ctx.dataDir, 'reports');
                 if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-                fs.copyFileSync(cat, path.join(dir, 'catalog-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'));
+                const out = path.join(dir, 'catalog-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+                fs.copyFileSync(cat, out + '.part');
+                fs.renameSync(out + '.part', out);
                 fs.writeFileSync(mark, new Date().toISOString());
                 log.info('head unit catalog queued for upload: ' + cat);
             }

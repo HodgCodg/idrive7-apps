@@ -91,7 +91,13 @@ def pull_once():
         body = get('/hba/file?name=' + quote(name))
         if not body:
             continue
-        path = save(name, body)
+        try:
+            path = save(name, body)
+        except ValueError:  # cut short on the car (head unit shut down mid-write): keep the bytes, don't block the queue
+            os.makedirs(OUT_DIR, exist_ok=True)
+            path = os.path.join(OUT_DIR, re.sub(r'[^A-Za-z0-9._-]', '_', os.path.basename(name)) + '.damaged')
+            with open(path, 'wb') as f:
+                f.write(body)
         get('/hba/ack?name=' + quote(name), 'POST')
         sys.stderr.write('pulled %s (%d bytes)\n' % (path, len(body)))
         got += 1
