@@ -53,7 +53,7 @@ requests.
 **E5 (0.8.0): E1 + E2 together**, the factory glare-free assistant as a whole: KAFAS's HBA demo mode on (`5D 2E D3 A6 01`),
 then the BDC routine with `SCHALTER_KAMERA` = 1 ("use the limits from the camera signals instead of diagnostic arguments").
 E2 alone can't work if the camera only sends glare-free limits while its own HBA is active (it never is: the button press never
-arrives). Up to 5 min, stopped in reverse order. Every observation also records the BDC's own state: `D542` byte 5 (high beam)
+arrives). Stopped in reverse order. Every observation also records the BDC's own state: `D542` byte 5 (high beam)
 and `D57E` (HBA enabled, HBA / glare-free HBA function state).
 
 Settings, **Experiment** (ships **Off**: then nothing but reads is ever sent, and the button is

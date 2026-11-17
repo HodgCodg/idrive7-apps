@@ -25,7 +25,8 @@
  *
  * Gates: the setting picks one experiment (Off = nothing is sent), the unit must have answered 22 F150 as
  * the SGBD the bytes are from, the car must be stationary in P on live data (interlock()), and the start
- * button must be pressed twice within 4 s. A run ends after durationMs (60 s) or on the next press.
+ * button must be pressed twice within 4 s (opts.singlePress: once). A run ends after durationMs (60 s) or on the
+ * next press (opts.untilStopped: only on the next press).
  * The verdict comes from the cluster's own HBA indicator (KOMBI 2520), read before, during and after.
  */
 const fs = require('fs');
@@ -44,11 +45,11 @@ const SESSION = Object.freeze([[0x10, [0x01]], [0x10, [0x03]], [0x3E, [0x00]]]);
 
 const EXPERIMENTS = Object.freeze({
     kafas: { id: 'kafas', title: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', ecu: D.KAFAS, sgbd: 'KAFAS04', start: 'e1On', stop: 'e1Off',
-        warn: 'KAFAS demo mode on for up to 60 s, then off.' },
+        warn: 'KAFAS demo mode on.' },
     bdc: { id: 'bdc', title: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)', ecu: D.BDC, sgbd: 'BDC_G05', start: 'e2Start', stop: 'e2Stop',
-        warn: 'Headlights may switch. Up to 60 s, then stopped.' },
+        warn: 'Headlights may switch.' },
     both: { id: 'both', title: 'E5  Factory glare-free HBA: KAFAS demo + BDC routine with camera limits', ecu: D.BDC, sgbd: 'BDC_G05',
-        parts: ['kafas', 'bdc'], warn: 'KAFAS demo mode and the BDC routine together, up to 5 min.', durationMs: 300000 },
+        parts: ['kafas', 'bdc'], warn: 'KAFAS demo mode and the BDC routine together.' },
 });
 
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -85,6 +86,8 @@ class Experiments {
         this.durationMs = opts.durationMs || 60000;
         this.observeMs = opts.observeMs || 2000;
         this.armMs = opts.armMs || 4000;
+        this.singlePress = !!opts.singlePress;      // the app: one press starts
+        this.untilStopped = !!opts.untilStopped;    // the app: runs until the next press (or the next app start)
         this.state = 'idle';                  // idle | running | done
         this.current = null;                  // the experiment of the last / current run
         this.events = [];
@@ -126,7 +129,7 @@ class Experiments {
         const why = this.blocker(id);
         if (why) { this.armedAt = 0; this.current = exp; this.event('crit', 'not started: ' + why); return Promise.resolve(); }
         const t = this.now();
-        if (!this.armedAt || t - this.armedAt > this.armMs) {
+        if (!this.singlePress && (!this.armedAt || t - this.armedAt > this.armMs)) {
             this.armedAt = t;
             this.current = exp;
             this.event('warn', 'armed: ' + exp.warn + ' Press again within ' + Math.round(this.armMs / 1000) + ' s to start');
@@ -172,10 +175,10 @@ class Experiments {
                 if (!(await this._start(part))) return;
             }
             this.extended = this.extendedEcus.length > 0;
-            const dur = exp.durationMs || this.durationMs;
-            this.event('ok', 'running. Watching the cluster, the camera and the BDC for ' + Math.round(dur / 1000) + ' s');
-            this.endsAt = this.now() + dur;
-            while (!this.stopRequested && this.now() < this.endsAt) {
+            const dur = this.untilStopped ? 0 : exp.durationMs || this.durationMs;
+            this.event('ok', 'running. Watching the cluster, the camera and the BDC ' + (dur ? 'for ' + Math.round(dur / 1000) + ' s' : 'until you press again'));
+            this.endsAt = dur ? this.now() + dur : 0;
+            while (!this.stopRequested && (!this.endsAt || this.now() < this.endsAt)) {
                 await sleep(this.observeMs);
                 for (const ecu of this.extendedEcus) await this.link.request(ecu, 0x3E, [0x00], 1500);     // tester present: keep the session (and the routine) alive
                 const o = Object.assign({ phase: 'during' }, await this.probe.observe());
