@@ -104,7 +104,8 @@ function interfaces(cv, G, t, v) {
 }
 
 const EXP_TITLE = { kafas: 'E1  KAFAS high beam assistant demo mode (2E D3A6)', bdc: 'E2  BDC high beam assistant demo routine, camera limits (31 A539)',
-    both: 'E5  Factory glare-free HBA: E1 + E2 together (KAFAS demo + BDC routine, camera limits)' };
+    both: 'E5  Factory glare-free HBA: E1 + E2 together (KAFAS demo + BDC routine, camera limits)',
+    ckm: 'E6  HBA on the iDrive-menu way: head unit setting Vehicle2.configLM2 (AKTIV + DEFAULT_ON)' };
 
 function experiment(cv, G, t, v) {
     const p = G.panel(cv, t, 20, G.TOP + 8, W - 40, G.BOTTOM - G.TOP - 16, 'Live-diagnostic experiment (BMW demo jobs, not the factory switch)');
@@ -121,6 +122,7 @@ function experiment(cv, G, t, v) {
         else if (v.blocker) left.push(['Cannot start: ' + v.blocker, 'warn']);
         else if (e.armed) left.push(['ARMED - press "Start / stop experiment" again to start', 'accent']);
         else left.push(['Ready: press "Start / stop experiment" to start, again to stop', 'text']);
+        if (e.ckm) left.push(['Head unit HBA setting now: setup ' + (e.ckm.setup == null ? '?' : e.ckm.setup) + ' (2 = AKTIV), config ' + (e.ckm.config == null ? '?' : e.ckm.config) + ' (1 = DEFAULT_ON)', 'text']);
         if (e.verdict) left.push(['Result: ' + e.verdict.text, LEVEL[e.verdict.level]]);
     }
     const o = e.samples;

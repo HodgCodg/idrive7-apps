@@ -22,6 +22,7 @@ const { Experiments, allowed } = require('./experiments');
 const UI = require('./ui');
 const { Uploader } = require('./uploader');
 const { Activity } = require('./activity');
+const { Ckm } = require('./ckm');
 const fs = require('fs');
 const path = require('path');
 
@@ -72,6 +73,7 @@ mgu.run({
         // selector are still recorded with every run (activity log), and the other safeguards stay: double press,
         // one press starts, the next stops (no time limit), switched back at the end / next start.
         const interlock = () => ({ ok: true, why: '' });
+        const ckm = new Ckm(ctx.signals, probe, log);   // E6: the iDrive-menu way (Vehicle2.configLM2)
         const exp = new Experiments(link, probe, { log, dataDir: ctx.dataDir, interlock, singlePress: true, untilStopped: true });
         // every saved report goes to the owner's server over Tailscale (queued and retried while offline)
         const uploader = new Uploader({ dataDir: ctx.dataDir, log, enabled: () => settings.get('upload') !== false, onFlush: () => act.flush('server pull'), onChange: () => { const uv = uploader.view(); const u = safeJson({ enabled: uv.enabled, reached: uv.reached, via: uv.via, error: uv.error });  /* counters alone are not news */ if (u !== lastUpload) { act.event('upload', JSON.parse(u)); lastUpload = u; } repaint(); } });
@@ -79,8 +81,8 @@ mgu.run({
         let page = UI.PAGES[0];
         let loop = null;
 
-        const view = () => Object.assign(probe.view(), { upload: uploader.view(), exp: exp.view(), expId: settings.get('experiment'),
-            blocker: exp.state === 'running' ? '' : exp.blocker(settings.get('experiment')) });
+        const view = () => { const id = settings.get('experiment'); return Object.assign(probe.view(), { upload: uploader.view(), exp: id === 'ckm' ? ckm.view() : exp.view(), expId: id,
+            blocker: id === 'ckm' ? (probe.state === 'done' ? '' : 'run the checks first') : exp.state === 'running' ? '' : exp.blocker(id) }); };
         const render = async () => {
             const cv = ctx.canvas(UI.W, UI.H) || new Canvas(UI.W, UI.H);
             UI.draw(cv, G, ctx.theme(), view(), page);
@@ -107,6 +109,7 @@ mgu.run({
         onClick('BTN_EXP', () => {
             const id = settings.get('experiment');
             if (id === 'off' || !link.ready) return repaint();
+            if (id === 'ckm') { page = 'Experiment'; if (probe.state !== 'done') return repaint(); const q = ckm.press().then(repaint).catch((e) => log.error('E6: ' + e)); repaint(); return q; }
             page = 'Experiment';
             const p = exp.press(id).then(() => { uploader.kick(); }).then(repaint).catch((e) => log.error('experiment: ' + e));
             repaint();
@@ -169,6 +172,7 @@ mgu.run({
         }
 
         uploader.start();
+        await ckm.init();
         await link.init();
         log.info('hba_assist ready (diagnostic link ' + (link.ready ? 'up' : 'down: ' + link.error) + ', experiment ' + settings.get('experiment') + ')');
         showExpButton();

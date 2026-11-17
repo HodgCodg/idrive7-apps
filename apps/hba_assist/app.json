@@ -2,7 +2,7 @@
   "id": "hba_assist",
   "title": "High Beam Assistant",
   "description": "High beam assistant: read-only checks (stalk button, KAFAS enabling code, cluster indicator, faults) and BMW's own HBA demo jobs as guarded live-diagnostic experiments",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "vendor": "custom",
   "loggingId": "OAB1",
   "iconGlyph": "HBA",
@@ -17,7 +17,9 @@
       ]
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "statusCarSpeed2": "rs"
+      "statusCarSpeed2": "rs",
+      "statusConfigLM2": "rs",
+      "configLM2": "w"
     },
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
@@ -83,6 +85,10 @@
         [
           "both",
           "E5: E1 + E2 together (glare-free HBA)"
+        ],
+        [
+          "ckm",
+          "E6: HBA on via iDrive setting"
         ]
       ]
     },
