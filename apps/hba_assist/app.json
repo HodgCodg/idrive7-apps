@@ -2,7 +2,7 @@
   "id": "hba_assist",
   "title": "High Beam Assistant",
   "description": "High beam assistant: read-only checks (stalk button, KAFAS enabling code, cluster indicator, faults) and BMW's own HBA demo jobs as guarded live-diagnostic experiments",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "vendor": "custom",
   "loggingId": "OAB1",
   "iconGlyph": "HBA",

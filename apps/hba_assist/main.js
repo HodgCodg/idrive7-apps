@@ -168,6 +168,18 @@ mgu.run({
             return o;
         }
 
+        // the head unit's whole SOME/IP catalog, once per app version: so every interface / setter can be traced on the server
+        try {
+            const cat = require('./catalog').FILE;
+            const mark = path.join(ctx.dataDir, 'catalog-sent-' + ((ctx.spec && ctx.spec.version) || 'x'));
+            if (!fs.existsSync(mark) && fs.existsSync(cat)) {
+                const dir = path.join(ctx.dataDir, 'reports');
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+                fs.copyFileSync(cat, path.join(dir, 'catalog-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json'));
+                fs.writeFileSync(mark, new Date().toISOString());
+                log.info('head unit catalog queued for upload: ' + cat);
+            }
+        } catch (e) { log.warn('catalog copy: ' + e); }
         uploader.start();
         await link.init();
         log.info('hba_assist ready (diagnostic link ' + (link.ready ? 'up' : 'down: ' + link.error) + ', experiment ' + settings.get('experiment') + ')');

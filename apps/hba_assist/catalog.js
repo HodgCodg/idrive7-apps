@@ -60,7 +60,8 @@ function scan(text, opts) {
         Object.keys(d.items || {}).forEach((k) => { if (re.test(k)) add({ iface: '', kind: 'enum', name: ref + '.' + k, flags: [] }); });
     });
     // which interfaces use a matching type (so a member / enum hit points at an interface)
-    const typeHits = hits.filter((h) => !h.iface).map((h) => h.name.split('.')[0]);
+    // (a member / enum hit is '<type ref>.<name>'; type refs are dotted themselves, so strip only the last part)
+    const typeHits = hits.filter((h) => !h.iface).map((h) => (h.kind === 'type' ? h.name : h.name.slice(0, h.name.lastIndexOf('.'))));
     const users = [];
     if (typeHits.length) {
         Object.keys(ifaces).forEach((id) => {
