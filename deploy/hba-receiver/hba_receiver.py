@@ -86,6 +86,17 @@ def pull_once():
     get = lambda p, method='GET': urllib.request.urlopen(urllib.request.Request(CAR + p, method=method, data=b'' if method == 'POST' else None), timeout=30).read()
     get('/hba/flush')
     got = 0
+    cat = os.path.join(OUT_DIR, 'catalog.json')
+    if not os.path.exists(cat):  # the head unit's SOME/IP catalog, once (app 0.9.3+ serves it; older apps 404)
+        try:
+            body = get('/hba/catalog')
+            json.loads(body)
+            with open(cat + '.part', 'wb') as f:
+                f.write(body)
+            os.rename(cat + '.part', cat)
+            sys.stderr.write('pulled %s (%d bytes)\n' % (cat, len(body)))
+        except Exception as e:
+            pass
     for item in json.loads(get('/hba/list')):
         name = item['name']
         body = get('/hba/file?name=' + quote(name))

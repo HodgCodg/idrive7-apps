@@ -58,6 +58,12 @@ class Uploader {
                 const file = path.join(this.dir, name);
                 if (!this.enabled()) return send(res, 403, 'text/plain', 'upload is off');
                 this._contact('pull');
+                if (u.pathname === '/hba/catalog') {   // the head unit's SOME/IP catalog, streamed from /etc (never copied: quota)
+                    const cat = require('./catalog').FILE;
+                    if (!fs.existsSync(cat)) return send(res, 404, 'text/plain', 'no catalog');
+                    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': fs.statSync(cat).size });
+                    return fs.createReadStream(cat).pipe(res);
+                }
                 if (u.pathname === '/hba/flush') { this.onFlush(); return send(res, 200, 'application/json', '{"ok":true}'); }
                 if (u.pathname === '/hba/list') {
                     return send(res, 200, 'application/json', JSON.stringify(this.pending().map((f) => {
@@ -88,17 +94,19 @@ class Uploader {
         if (!was) { this.log.info('server reached (' + via + ')'); this.onChange(); }
     }
 
+    // the server has it: deleted here. The app's data folder has a small quota (EDQUOT, errno -122): keeping
+    // sent copies filled it and cut every later file short at a 4 KB block.
     _sent(f, how) {
-        try {
-            if (!fs.existsSync(this.sentDir)) fs.mkdirSync(this.sentDir);
-            fs.renameSync(path.join(this.dir, f), path.join(this.sentDir, f));
-        } catch (e) { if (e.code !== 'ENOENT') throw e; return; }
+        try { fs.unlinkSync(path.join(this.dir, f)); } catch (e) { if (e.code !== 'ENOENT') throw e; return; }
         this.sent++;
         this.last = f;
         if (how !== 'pulled') this.log.info(how + ' ' + f);   // pulls are logged by the server (a log line here would be news to pull again)
     }
 
     start() {
+        // sent copies kept by 0.5-0.9.2 (and half-written .part files): free the quota
+        try { fs.readdirSync(this.sentDir).forEach((f) => { try { fs.unlinkSync(path.join(this.sentDir, f)); } catch (e) {} }); fs.rmdirSync(this.sentDir); } catch (e) {}
+        try { fs.readdirSync(this.dir).filter((f) => /\.part$/.test(f)).forEach((f) => { try { fs.unlinkSync(path.join(this.dir, f)); } catch (e) {} }); } catch (e) {}
         if (!this.timer) this.timer = setInterval(() => this.kick(), RETRY_MS);
         if (this.timer.unref) this.timer.unref();
         this.serve();
